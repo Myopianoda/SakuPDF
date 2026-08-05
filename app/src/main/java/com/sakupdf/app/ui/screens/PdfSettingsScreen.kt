@@ -43,8 +43,7 @@ fun PdfSettingsScreen(
             viewModel.startRealImageToPdfConversion(
                 contentResolver = context.contentResolver,
                 targetUri = targetUri,
-                onNavigateToProcessing = onStartProcess,
-                onNavigateToSuccess = {} // Handled by NavHost
+                onNavigateToProcessing = onStartProcess
             )
         }
     }

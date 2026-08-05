@@ -17,6 +17,8 @@ import kotlin.coroutines.coroutineContext
 
 object ImageToPdfConverter {
 
+    private const val TAG = "SakuPDF_Converter"
+
     suspend fun convert(
         contentResolver: ContentResolver,
         images: List<ImageItem>,
@@ -24,7 +26,10 @@ object ImageToPdfConverter {
         targetUri: Uri,
         onProgress: (ConversionProgress) -> Unit
     ): Result<ConversionResult> = withContext(Dispatchers.IO) {
+        AppLogger.d(TAG, "Conversion started for ${images.size} images to targetUri: $targetUri")
+
         if (images.isEmpty()) {
+            AppLogger.e(TAG, "Finalization error: No images selected.")
             return@withContext Result.failure(Exception("Tidak ada gambar yang dipilih."))
         }
 
@@ -55,20 +60,28 @@ object ImageToPdfConverter {
                     )
                 )
 
-                // Decode downsampled & rotated bitmap for single page
+                // Decode downsampled & rotated bitmap
                 val bitmap = try {
-                    ImageDecoderUtils.decodeDownsampledBitmap(
+                    val decoded = ImageDecoderUtils.decodeDownsampledBitmap(
                         contentResolver = contentResolver,
                         uri = imageItem.uri,
                         maxDimension = maxDimension,
                         userRotationDegrees = imageItem.rotation
                     )
+                    AppLogger.d(TAG, "Image decoded successfully: ${imageItem.name}")
+                    decoded
                 } catch (e: OutOfMemoryError) {
+                    AppLogger.e(TAG, "Finalization error: OutOfMemoryError for ${imageItem.name}")
                     throw Exception("Memori perangkat tidak cukup untuk memproses ${imageItem.name}.")
                 } catch (e: Exception) {
+                    AppLogger.e(TAG, "Finalization error: Exception reading ${imageItem.name}: ${e.message}")
                     throw Exception("Gambar ${imageItem.name} tidak dapat dibaca atau rusak.")
-                } ?: throw Exception("Gambar ${imageItem.name} tidak dapat dibaca.")
+                } ?: run {
+                    AppLogger.e(TAG, "Finalization error: Bitmap is null for ${imageItem.name}")
+                    throw Exception("Gambar ${imageItem.name} tidak dapat dibaca.")
+                }
 
+                var page: PdfDocument.Page? = null
                 try {
                     val rawSize = PdfMathUtils.calculatePageSizePoints(
                         sizeOption = settings.pageSize,
@@ -84,13 +97,15 @@ object ImageToPdfConverter {
                     val pageH = pageSize.second.toInt().coerceAtLeast(100)
 
                     val pageInfo = PdfDocument.PageInfo.Builder(pageW, pageH, pageNumber).create()
-                    val page = pdfDocument.startPage(pageInfo)
+
+                    AppLogger.d(TAG, "Page started: $pageNumber of $totalPages")
+                    page = pdfDocument.startPage(pageInfo)
                     val canvas = page.canvas
 
                     // White page background
                     canvas.drawColor(Color.WHITE)
 
-                    // Calculate printable area inside margins
+                    // Printable container calculation
                     val containerWidth = (pageW.toFloat() - (marginPoints * 2f)).coerceAtLeast(10f)
                     val containerHeight = (pageH.toFloat() - (marginPoints * 2f)).coerceAtLeast(10f)
 
@@ -101,13 +116,20 @@ object ImageToPdfConverter {
                         containerHeight = containerHeight
                     )
 
-                    // Offset rect by margins
                     destRect.offset(marginPoints, marginPoints)
 
                     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
                     canvas.drawBitmap(bitmap, null, destRect, paint)
 
                     pdfDocument.finishPage(page)
+                    page = null
+                    AppLogger.d(TAG, "Page finished: $pageNumber of $totalPages")
+                } catch (e: Exception) {
+                    if (page != null) {
+                        try { pdfDocument.finishPage(page) } catch (_: Exception) {}
+                    }
+                    AppLogger.e(TAG, "Finalization error rendering page $pageNumber: ${e.message}")
+                    throw e
                 } finally {
                     bitmap.recycle()
                 }
@@ -125,26 +147,47 @@ object ImageToPdfConverter {
                 )
             )
 
-            // Write PDF to output stream
-            try {
-                outputStream = contentResolver.openOutputStream(targetUri, "w")
-                    ?: throw Exception("Tidak dapat membuat file PDF di lokasi yang dipilih.")
-                pdfDocument.writeTo(outputStream)
-                outputStream.flush()
-            } catch (e: Exception) {
-                throw Exception("Gagal menulis file PDF ke penyimpanan. ${e.localizedMessage ?: ""}")
+            // Step 1: Open Output Stream
+            outputStream = contentResolver.openOutputStream(targetUri, "w")
+                ?: run {
+                    AppLogger.e(TAG, "Finalization error: Unable to open output stream for targetUri: $targetUri")
+                    throw Exception("Tidak dapat membuat file PDF di lokasi yang dipilih.")
+                }
+
+            // Step 2: PdfDocument.writeTo()
+            AppLogger.d(TAG, "PdfDocument.writeTo started")
+            pdfDocument.writeTo(outputStream)
+            AppLogger.d(TAG, "PdfDocument.writeTo completed")
+
+            // Step 3: Flush and Close Output Stream
+            outputStream.flush()
+            outputStream.close()
+            outputStream = null
+            AppLogger.d(TAG, "Output stream closed")
+
+            // Step 4: Close PdfDocument
+            pdfDocument.close()
+            AppLogger.d(TAG, "PdfDocument closed")
+
+            coroutineContext.ensureActive()
+
+            // Step 5: Verify target URI can be read & get real output size
+            val bytesSize = contentResolver.openFileDescriptor(targetUri, "r")?.use { pfd ->
+                pfd.statSize
+            } ?: run {
+                AppLogger.e(TAG, "Finalization error: Unable to read file descriptor for targetUri")
+                throw Exception("Gagal memverifikasi file PDF yang dibuat.")
             }
 
-            // Determine file size
-            val fileSizeFormatted = try {
-                contentResolver.openFileDescriptor(targetUri, "r")?.use { pfd ->
-                    val bytes = pfd.statSize
-                    val kb = bytes / 1024f
-                    if (kb >= 1024) String.format("%.1f MB", kb / 1024f) else String.format("%.0f KB", kb)
-                } ?: "PDF Baru"
-            } catch (_: Exception) {
-                "PDF Baru"
+            if (bytesSize <= 0) {
+                AppLogger.e(TAG, "Finalization error: Created PDF size is 0 bytes")
+                throw Exception("File PDF yang dibuat kosong (0 bytes).")
             }
+
+            val kb = bytesSize / 1024f
+            val fileSizeFormatted = if (kb >= 1024) String.format("%.1f MB", kb / 1024f) else String.format("%.0f KB", kb)
+
+            AppLogger.d(TAG, "Success state emitted: $sanitizedFileName, Size: $fileSizeFormatted")
 
             Result.success(
                 ConversionResult(
@@ -155,10 +198,11 @@ object ImageToPdfConverter {
                 )
             )
         } catch (e: Exception) {
+            AppLogger.e(TAG, "Finalization error caught during conversion: ${e.message}")
             Result.failure(e)
         } finally {
             try { outputStream?.close() } catch (_: Exception) {}
-            pdfDocument.close()
+            try { pdfDocument.close() } catch (_: Exception) {}
         }
     }
 }

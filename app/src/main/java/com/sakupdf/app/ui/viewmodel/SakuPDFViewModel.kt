@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sakupdf.app.domain.AppLogger
 import com.sakupdf.app.domain.ImageToPdfConverter
 import com.sakupdf.app.domain.PdfMathUtils
 import com.sakupdf.app.model.CompressionLevel
@@ -49,6 +50,7 @@ data class SakuPDFUiState(
     val isProcessing: Boolean = false,
     val isCancelConfirmDialogVisible: Boolean = false,
     val conversionResult: ConversionResult? = null,
+    val shouldNavigateToSuccess: Boolean = false,
     val lastGeneratedDocument: PdfDocument = initialDummyDocuments.first(),
     val errorMessage: String? = null,
     val userNotificationMessage: String? = null,
@@ -75,6 +77,8 @@ val initialDummyMergePdfs = listOf(
 
 class SakuPDFViewModel : ViewModel() {
 
+    private val TAG = "SakuPDF_ViewModel"
+
     private val _uiState = MutableStateFlow(SakuPDFUiState())
     val uiState: StateFlow<SakuPDFUiState> = _uiState.asStateFlow()
 
@@ -86,8 +90,12 @@ class SakuPDFViewModel : ViewModel() {
     }
 
     private fun generateDefaultPdfFilename() {
-        val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-        val defaultName = "SakuPDF_${sdf.format(Date())}.pdf"
+        val defaultName = try {
+            val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+            "SakuPDF_${sdf.format(Date())}.pdf"
+        } catch (_: Throwable) {
+            "SakuPDF_Document.pdf"
+        }
         _uiState.update { state ->
             if (state.pdfSettings.filename.isBlank()) {
                 state.copy(pdfSettings = state.pdfSettings.copy(filename = defaultName))
@@ -229,8 +237,7 @@ class SakuPDFViewModel : ViewModel() {
     fun startRealImageToPdfConversion(
         contentResolver: ContentResolver,
         targetUri: Uri,
-        onNavigateToProcessing: () -> Unit,
-        onNavigateToSuccess: () -> Unit
+        onNavigateToProcessing: () -> Unit
     ) {
         val images = _uiState.value.imagesToConvert
         if (images.isEmpty()) {
@@ -238,11 +245,15 @@ class SakuPDFViewModel : ViewModel() {
             return
         }
 
+        AppLogger.d(TAG, "startRealImageToPdfConversion called for ${images.size} images.")
+
         activeTargetUri = targetUri
         _uiState.update {
             it.copy(
                 isProcessing = true,
                 errorMessage = null,
+                conversionResult = null,
+                shouldNavigateToSuccess = false,
                 conversionProgress = ConversionProgress(
                     processedPages = 0,
                     totalPages = images.size,
@@ -269,6 +280,7 @@ class SakuPDFViewModel : ViewModel() {
 
             result.fold(
                 onSuccess = { res ->
+                    AppLogger.d(TAG, "Conversion succeeded in ViewModel. Emitting success state.")
                     val newDoc = PdfDocument(
                         id = UUID.randomUUID().toString(),
                         name = res.filename,
@@ -283,15 +295,17 @@ class SakuPDFViewModel : ViewModel() {
                             conversionResult = res,
                             lastGeneratedDocument = newDoc,
                             activeDocument = newDoc,
-                            documents = listOf(newDoc) + state.documents
+                            documents = listOf(newDoc) + state.documents,
+                            shouldNavigateToSuccess = true
                         )
                     }
-                    onNavigateToSuccess()
                 },
                 onFailure = { err ->
+                    AppLogger.e(TAG, "Conversion failed in ViewModel: ${err.message}")
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
+                            shouldNavigateToSuccess = false,
                             errorMessage = err.localizedMessage ?: "Gagal membuat PDF. Silakan coba lagi."
                         )
                     }
@@ -300,10 +314,26 @@ class SakuPDFViewModel : ViewModel() {
         }
     }
 
+    fun simulateProcessingToSuccessState(result: ConversionResult) {
+        _uiState.update { state ->
+            state.copy(
+                isProcessing = false,
+                conversionResult = result,
+                shouldNavigateToSuccess = true
+            )
+        }
+    }
+
+    fun onNavigationToSuccessHandled() {
+        AppLogger.d(TAG, "Result navigation triggered & handled.")
+        _uiState.update { it.copy(shouldNavigateToSuccess = false) }
+    }
+
     fun startDummyProcessing(title: String, onComplete: () -> Unit) {
         _uiState.update {
             it.copy(
                 isProcessing = true,
+                shouldNavigateToSuccess = false,
                 conversionProgress = ConversionProgress(0, 10, 0f, "file_dummy.pdf", title)
             )
         }
@@ -321,7 +351,7 @@ class SakuPDFViewModel : ViewModel() {
                     )
                 }
             }
-            _uiState.update { it.copy(isProcessing = false) }
+            _uiState.update { it.copy(isProcessing = false, shouldNavigateToSuccess = true) }
             onComplete()
         }
     }
@@ -331,6 +361,7 @@ class SakuPDFViewModel : ViewModel() {
     }
 
     fun confirmCancelConversion(contentResolver: ContentResolver, onCancelled: () -> Unit) {
+        AppLogger.d(TAG, "Conversion cancellation requested.")
         activeConversionJob?.cancel()
         activeConversionJob = null
 
@@ -345,6 +376,7 @@ class SakuPDFViewModel : ViewModel() {
             it.copy(
                 isProcessing = false,
                 isCancelConfirmDialogVisible = false,
+                shouldNavigateToSuccess = false,
                 errorMessage = "Proses pembuatan PDF dibatalkan."
             )
         }
@@ -364,6 +396,7 @@ class SakuPDFViewModel : ViewModel() {
             state.copy(
                 imagesToConvert = emptyList(),
                 conversionResult = null,
+                shouldNavigateToSuccess = false,
                 pdfSettings = PdfSettings()
             )
         }

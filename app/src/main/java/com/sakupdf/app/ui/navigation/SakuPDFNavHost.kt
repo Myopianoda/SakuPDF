@@ -132,7 +132,12 @@ fun SakuPDFNavHost(
         composable(Routes.PROCESSING) {
             ProcessingScreen(
                 viewModel = viewModel,
-                onCancel = { navController.popBackStack() }
+                onCancel = { navController.popBackStack() },
+                onConversionSuccess = {
+                    navController.navigate(Routes.RESULT_SUCCESS) {
+                        popUpTo(Routes.HOME)
+                    }
+                }
             )
         }
         composable(Routes.RESULT_SUCCESS) {

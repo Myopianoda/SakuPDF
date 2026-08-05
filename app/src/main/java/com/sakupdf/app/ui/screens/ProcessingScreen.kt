@@ -1,5 +1,6 @@
 package com.sakupdf.app.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,6 +9,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -23,11 +25,43 @@ import com.sakupdf.app.ui.viewmodel.SakuPDFViewModel
 @Composable
 fun ProcessingScreen(
     viewModel: SakuPDFViewModel,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onConversionSuccess: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val progress = uiState.conversionProgress
+
+    // Observe success navigation trigger
+    LaunchedEffect(uiState.shouldNavigateToSuccess) {
+        if (uiState.shouldNavigateToSuccess) {
+            Log.d("SakuPDF_Processing", "Result navigation triggered in ProcessingScreen.")
+            viewModel.onNavigationToSuccessHandled()
+            onConversionSuccess()
+        }
+    }
+
+    // Handle error dialog if conversion fails
+    if (uiState.errorMessage != null && !uiState.isProcessing) {
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.clearErrorMessage()
+                onCancel()
+            },
+            title = { Text("Gagal Membuat PDF") },
+            text = { Text(uiState.errorMessage ?: "Terjadi kesalahan saat membuat PDF.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearErrorMessage()
+                        onCancel()
+                    }
+                ) {
+                    Text("Kembali")
+                }
+            }
+        )
+    }
 
     if (uiState.isCancelConfirmDialogVisible) {
         AlertDialog(
