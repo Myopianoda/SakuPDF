@@ -31,7 +31,7 @@ object MergePdfConverter {
         AppLogger.d(TAG, "Starting PDF merge for ${pdfItems.size} files.")
 
         if (pdfItems.size < 2) {
-            AppLogger.e(TAG, "Merge error: Less than 2 files provided.")
+            AppLogger.e(TAG, "Merge error: Fewer than 2 files provided.")
             return@withContext Result.failure(Exception("Pilih setidaknya 2 file PDF untuk digabungkan."))
         }
 
@@ -64,7 +64,10 @@ object MergePdfConverter {
                     )
                 )
 
-                val uri = pdfDoc.uri ?: throw Exception("File PDF ${pdfDoc.name} tidak memiliki lokasi yang valid.")
+                val uri = pdfDoc.uri ?: run {
+                    AppLogger.e(TAG, "File PDF ${pdfDoc.name} has null URI.")
+                    throw Exception("File PDF ${pdfDoc.name} tidak memiliki lokasi yang valid.")
+                }
 
                 // Password protection check
                 if (pdfDoc.isPdf && PdfDocumentInspector.isPdfPasswordProtected(contentResolver, uri)) {
@@ -72,7 +75,7 @@ object MergePdfConverter {
                     throw Exception("File PDF dilindungi kata sandi dan tidak dapat digabungkan.")
                 }
 
-                // Copy to temporary seekable cache file
+                // Copy URI to private temporary cache file
                 val tempFile = PdfTemporaryFileManager.createTempPdfFileFromUri(context, contentResolver, uri)
                     ?: run {
                         AppLogger.e(TAG, "Failed to create temp file for ${pdfDoc.name}")
@@ -80,7 +83,7 @@ object MergePdfConverter {
                     }
                 tempFiles.add(tempFile)
 
-                // Inspect loaded document
+                // Inspect loaded document via PDFBox
                 var pdDoc: PDDocument? = null
                 try {
                     pdDoc = PDDocument.load(tempFile)
