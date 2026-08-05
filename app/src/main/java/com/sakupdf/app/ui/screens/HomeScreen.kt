@@ -8,9 +8,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallMerge
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CallMerge
-import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sakupdf.app.ui.components.DocumentCard
 import com.sakupdf.app.ui.components.SakuPDFBottomNavBar
@@ -49,8 +50,8 @@ fun HomeScreen(
 
     val tools = listOf(
         ToolGridItem("Gambar ke PDF", "Gabungkan beberapa gambar menjadi satu PDF", Icons.Default.Collections, Routes.ORGANIZE_IMAGES),
-        ToolGridItem("Gabungkan PDF", "Satukan beberapa file PDF", Icons.Default.CallMerge, Routes.MERGE_PDF),
-        ToolGridItem("Pisahkan PDF", "Pisahkan halaman PDF", Icons.Default.CallSplit, Routes.SPLIT_PDF),
+        ToolGridItem("Gabungkan PDF", "Satukan beberapa file PDF", Icons.AutoMirrored.Filled.CallMerge, Routes.MERGE_PDF),
+        ToolGridItem("Pisahkan PDF", "Pisahkan halaman PDF", Icons.AutoMirrored.Filled.CallSplit, Routes.SPLIT_PDF),
         ToolGridItem("Kompres PDF", "Kurangi ukuran file PDF", Icons.Default.Compress, Routes.COMPRESS_PDF),
         ToolGridItem("PDF ke Gambar", "Ubah halaman PDF menjadi JPG atau PNG", Icons.Default.PictureAsPdf, Routes.PDF_TO_IMAGE)
     )
@@ -69,19 +70,18 @@ fun HomeScreen(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Tambah")
+                Icon(Icons.Default.Add, contentDescription = "Tambah Gambar")
             }
         }
     ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp),
+                .padding(paddingValues),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Spacer(modifier = Modifier.height(8.dp))
                 // App Branding Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -180,7 +180,9 @@ fun HomeScreen(
                             Text(
                                 text = tool.description,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -216,7 +218,7 @@ fun HomeScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(48.dp)) // Ensures FAB & Bottom Nav never obscure last items
             }
         }
     }

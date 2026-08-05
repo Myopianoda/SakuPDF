@@ -7,8 +7,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallMerge
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Info
@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sakupdf.app.ui.components.SakuPDFTopAppBar
 import com.sakupdf.app.ui.theme.PrimaryContainer
@@ -75,7 +76,7 @@ fun MergePdfScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = CircleShape
                     ) {
-                        Icon(Icons.Default.CallMerge, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.CallMerge, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Gabungkan PDF")
                     }
@@ -112,7 +113,7 @@ fun MergePdfScreen(
 
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(vertical = 8.dp)
+                contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)
             ) {
                 items(uiState.pdfsToMerge) { doc ->
                     Surface(
@@ -141,9 +142,19 @@ fun MergePdfScreen(
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(doc.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = doc.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 Spacer(modifier = Modifier.height(2.dp))
-                                Text("${doc.sizeFormatted} • ${doc.pages} halaman", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = "${doc.sizeFormatted} • ${doc.pages} halaman",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                             IconButton(onClick = {}) {
                                 Icon(Icons.Default.Close, contentDescription = "Hapus")

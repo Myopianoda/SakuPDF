@@ -1,12 +1,14 @@
 package com.sakupdf.app.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -53,7 +55,7 @@ fun FileListScreen(
                         Icon(Icons.Default.Search, contentDescription = "Cari")
                     }
                     IconButton(onClick = { }) {
-                        Icon(Icons.Default.Sort, contentDescription = "Urutkan")
+                        Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Urutkan")
                     }
                 }
             )
@@ -70,10 +72,11 @@ fun FileListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Filter Chips Row
+            // Filter Chips Row (with horizontal scroll for narrow screens)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -97,7 +100,7 @@ fun FileListScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 40.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(filteredDocs) { doc ->

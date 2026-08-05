@@ -8,13 +8,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Share
@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sakupdf.app.ui.components.ConfirmDeleteDialog
 import com.sakupdf.app.ui.components.SakuPDFTopAppBar
@@ -68,15 +69,17 @@ fun FileDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Spacer(modifier = Modifier.height(4.dp))
+
             // Large Preview Card
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
+                    .height(180.dp)
                     .clip(RoundedCornerShape(16.dp)),
                 color = SurfaceContainerLowest,
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -122,7 +125,9 @@ fun FileDetailScreen(
             Text(
                 text = doc.name,
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = doc.status,
@@ -132,21 +137,21 @@ fun FileDetailScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            // Metadata Grid / Column Items
+            // Metadata Items
             MetadataItem("Jenis", if (doc.isPdf) "Dokumen PDF" else "Gambar JPG", Icons.Default.Description)
             MetadataItem("Ukuran", doc.sizeFormatted, Icons.Default.SdCard)
             MetadataItem("Halaman", "${doc.pages} Halaman", Icons.Default.AutoStories)
             MetadataItem("Tanggal Dibuat", doc.dateFormatted, Icons.Default.CalendarToday)
             MetadataItem("Lokasi", doc.location, Icons.Default.Folder)
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Bottom Quick Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                ActionButton("Buka", Icons.Default.OpenInNew) {}
+                ActionButton("Buka", Icons.AutoMirrored.Filled.OpenInNew) {}
                 ActionButton("Bagikan", Icons.Default.Share) {}
                 ActionButton("Ubah nama", Icons.Default.Edit) {}
                 ActionButton(
@@ -156,6 +161,8 @@ fun FileDetailScreen(
                     onClick = { viewModel.requestDelete(doc) }
                 )
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
@@ -175,7 +182,7 @@ private fun MetadataItem(label: String, value: String, icon: ImageVector) {
             modifier = Modifier.size(20.dp)
         )
         Spacer(modifier = Modifier.width(12.dp))
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
@@ -184,7 +191,9 @@ private fun MetadataItem(label: String, value: String, icon: ImageVector) {
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -224,7 +233,9 @@ private fun ActionButton(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            color = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
