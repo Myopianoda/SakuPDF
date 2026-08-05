@@ -1,0 +1,159 @@
+package com.sakupdf.app.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Compress
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.sakupdf.app.model.CompressionLevel
+import com.sakupdf.app.ui.components.SakuPDFTopAppBar
+import com.sakupdf.app.ui.theme.PrimaryContainer
+import com.sakupdf.app.ui.theme.SurfaceContainerLowest
+import com.sakupdf.app.ui.viewmodel.SakuPDFViewModel
+
+@Composable
+fun CompressPdfScreen(
+    viewModel: SakuPDFViewModel,
+    onNavigateBack: () -> Unit,
+    onStartProcess: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    Scaffold(
+        topBar = {
+            SakuPDFTopAppBar(
+                title = "Kompres PDF",
+                canNavigateBack = true,
+                onNavigateBack = onNavigateBack
+            )
+        },
+        bottomBar = {
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(modifier = Modifier.padding(16.dp)) {
+                    Button(
+                        onClick = onStartProcess,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = CircleShape
+                    ) {
+                        Icon(Icons.Default.Compress, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Kompres PDF Sekarang")
+                    }
+                }
+            }
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "Kurangi ukuran file dokumen Anda.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // Document Card
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = SurfaceContainerLowest,
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(PrimaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text("Laporan_Tahunan_Keuangan_Final_v2.pdf", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text("2.4 MB • 12 Halaman", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            Text("Tingkat Kompresi", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+
+            CompressionLevel.entries.forEach { level ->
+                val isSelected = uiState.compressionLevel == level
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { viewModel.setCompressionLevel(level) },
+                    color = SurfaceContainerLowest,
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = { viewModel.setCompressionLevel(level) }
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(level.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                if (level.badge != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = PrimaryContainer
+                                    ) {
+                                        Text(
+                                            text = level.badge,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(level.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
