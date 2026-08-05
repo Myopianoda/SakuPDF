@@ -1,5 +1,7 @@
 package com.sakupdf.app.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -16,8 +18,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.sakupdf.app.domain.PdfMathUtils
 import com.sakupdf.app.ui.components.SakuPDFTopAppBar
 import com.sakupdf.app.ui.theme.PrimaryContainer
 import com.sakupdf.app.ui.viewmodel.SakuPDFViewModel
@@ -30,6 +34,20 @@ fun PdfSettingsScreen(
     onStartProcess: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    val createDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { targetUri ->
+        if (targetUri != null) {
+            viewModel.startRealImageToPdfConversion(
+                contentResolver = context.contentResolver,
+                targetUri = targetUri,
+                onNavigateToProcessing = onStartProcess,
+                onNavigateToSuccess = {} // Handled by NavHost
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -47,7 +65,10 @@ fun PdfSettingsScreen(
             ) {
                 Box(modifier = Modifier.padding(16.dp)) {
                     Button(
-                        onClick = onStartProcess,
+                        onClick = {
+                            val sanitized = PdfMathUtils.sanitizeFilename(uiState.pdfSettings.filename)
+                            createDocumentLauncher.launch(sanitized)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = CircleShape
                     ) {
@@ -76,7 +97,7 @@ fun PdfSettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "4 Gambar Dipilih",
+                        text = "${uiState.imagesToConvert.size} Gambar Dipilih",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -91,7 +112,7 @@ fun PdfSettingsScreen(
 
             // Nama File
             OutlinedTextField(
-                value = uiState.pdfExportName,
+                value = uiState.pdfSettings.filename,
                 onValueChange = { viewModel.setPdfExportName(it) },
                 label = { Text("Nama File") },
                 modifier = Modifier.fillMaxWidth(),
@@ -104,7 +125,7 @@ fun PdfSettingsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Otomatis", "A4", "Letter").forEach { size ->
                     FilterChip(
-                        selected = uiState.pdfPageSize == size,
+                        selected = uiState.pdfSettings.pageSize == size,
                         onClick = { viewModel.setPdfPageSize(size) },
                         label = { Text(size) }
                     )
@@ -114,18 +135,20 @@ fun PdfSettingsScreen(
             // Orientasi
             Text("Orientasi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = uiState.pdfOrientation == "Potret",
-                    onClick = { viewModel.setPdfOrientation("Potret") },
-                    leadingIcon = { Icon(Icons.Default.CropPortrait, contentDescription = null) },
-                    label = { Text("Potret") }
-                )
-                FilterChip(
-                    selected = uiState.pdfOrientation == "Lanskap",
-                    onClick = { viewModel.setPdfOrientation("Lanskap") },
-                    leadingIcon = { Icon(Icons.Default.CropLandscape, contentDescription = null) },
-                    label = { Text("Lanskap") }
-                )
+                listOf("Otomatis", "Potret", "Lanskap").forEach { orientation ->
+                    FilterChip(
+                        selected = uiState.pdfSettings.orientation == orientation,
+                        onClick = { viewModel.setPdfOrientation(orientation) },
+                        leadingIcon = {
+                            when (orientation) {
+                                "Potret" -> Icon(Icons.Default.CropPortrait, contentDescription = null)
+                                "Lanskap" -> Icon(Icons.Default.CropLandscape, contentDescription = null)
+                                else -> null
+                            }
+                        },
+                        label = { Text(orientation) }
+                    )
+                }
             }
 
             // Margin
@@ -133,7 +156,7 @@ fun PdfSettingsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Tanpa margin", "Kecil", "Sedang").forEach { margin ->
                     FilterChip(
-                        selected = uiState.pdfMargin == margin,
+                        selected = uiState.pdfSettings.margin == margin,
                         onClick = { viewModel.setPdfMargin(margin) },
                         label = { Text(margin) }
                     )
@@ -148,13 +171,15 @@ fun PdfSettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     RadioButton(
-                        selected = uiState.pdfQuality == q,
+                        selected = uiState.pdfSettings.quality == q,
                         onClick = { viewModel.setPdfQuality(q) }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(q, style = MaterialTheme.typography.bodyMedium)
                 }
             }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }

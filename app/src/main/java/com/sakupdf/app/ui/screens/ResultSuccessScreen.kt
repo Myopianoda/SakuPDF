@@ -1,5 +1,9 @@
 package com.sakupdf.app.ui.screens
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.provider.DocumentsContract
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -21,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -34,7 +39,13 @@ fun ResultSuccessScreen(
     onBackToHome: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val resultDoc = uiState.lastGeneratedDocument
+    val context = LocalContext.current
+    val result = uiState.conversionResult
+
+    val displayFilename = result?.filename ?: uiState.lastGeneratedDocument.name
+    val displaySize = result?.sizeFormatted ?: uiState.lastGeneratedDocument.sizeFormatted
+    val displayPages = result?.pages ?: uiState.lastGeneratedDocument.pages
+    val pdfUri = result?.uri ?: uiState.lastGeneratedDocument.uri
 
     Scaffold { paddingValues ->
         Column(
@@ -94,7 +105,7 @@ fun ResultSuccessScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = resultDoc.name,
+                            text = displayFilename,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
@@ -102,7 +113,7 @@ fun ResultSuccessScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "${resultDoc.sizeFormatted} • ${resultDoc.pages} Halaman",
+                            text = "$displaySize • $displayPages Halaman",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -112,8 +123,23 @@ fun ResultSuccessScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // Primary Action: Open File
             Button(
-                onClick = onBackToHome,
+                onClick = {
+                    if (pdfUri != null) {
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(pdfUri, "application/pdf")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        try {
+                            context.startActivity(Intent.createChooser(intent, "Buka PDF"))
+                        } catch (_: ActivityNotFoundException) {
+                            Toast.makeText(context, "Tidak ada aplikasi pembaca PDF di perangkat ini.", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "Membuka file PDF...", Toast.LENGTH_SHORT).show()
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = CircleShape
             ) {
@@ -129,15 +155,52 @@ fun ResultSuccessScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                QuickActionIconButton("Bagikan", Icons.Default.Share) {}
-                QuickActionIconButton("Ubah nama", Icons.Default.Edit) {}
-                QuickActionIconButton("Hapus", Icons.Default.Delete, isDestructive = true) {}
+                QuickActionIconButton("Bagikan", Icons.Default.Share) {
+                    if (pdfUri != null) {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            putExtra(Intent.EXTRA_STREAM, pdfUri)
+                            type = "application/pdf"
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        try {
+                            context.startActivity(Intent.createChooser(shareIntent, "Bagikan PDF"))
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "Gagal membagikan file PDF.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                QuickActionIconButton("Ubah nama", Icons.Default.Edit) {
+                    Toast.makeText(context, "Nama file diatur saat penyimpanan PDF.", Toast.LENGTH_SHORT).show()
+                }
+                QuickActionIconButton("Hapus", Icons.Default.Delete, isDestructive = true) {
+                    if (pdfUri != null) {
+                        try {
+                            val deleted = DocumentsContract.deleteDocument(context.contentResolver, pdfUri)
+                            if (deleted) {
+                                Toast.makeText(context, "File PDF berhasil dihapus.", Toast.LENGTH_SHORT).show()
+                                viewModel.clearImageToPdfState()
+                                onBackToHome()
+                            } else {
+                                Toast.makeText(context, "File PDF dihapus dari riwayat.", Toast.LENGTH_SHORT).show()
+                                viewModel.clearImageToPdfState()
+                                onBackToHome()
+                            }
+                        } catch (_: Exception) {
+                            Toast.makeText(context, "File PDF dihapus dari riwayat.", Toast.LENGTH_SHORT).show()
+                            viewModel.clearImageToPdfState()
+                            onBackToHome()
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
             OutlinedButton(
-                onClick = onBackToHome,
+                onClick = {
+                    viewModel.clearImageToPdfState()
+                    onBackToHome()
+                },
                 modifier = Modifier.fillMaxWidth(),
                 shape = CircleShape
             ) {

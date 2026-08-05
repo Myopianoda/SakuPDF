@@ -1,5 +1,8 @@
 package com.sakupdf.app.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,6 +51,17 @@ fun HomeScreen(
     onNavigateToRoute: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    // Photo Picker launcher (max 30 images)
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(30)
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.addImagesFromUris(context.contentResolver, uris)
+            onNavigateToRoute(Routes.ORGANIZE_IMAGES)
+        }
+    }
 
     val tools = listOf(
         ToolGridItem("Gambar ke PDF", "Gabungkan beberapa gambar menjadi satu PDF", Icons.Default.Collections, Routes.ORGANIZE_IMAGES),
@@ -65,7 +80,11 @@ fun HomeScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { onNavigateToRoute(Routes.ORGANIZE_IMAGES) },
+                onClick = {
+                    photoPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
                 shape = CircleShape,
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary
@@ -82,7 +101,6 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                // App Branding Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -145,7 +163,15 @@ fun HomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .clickable { onNavigateToRoute(tool.route) },
+                        .clickable {
+                            if (tool.route == Routes.ORGANIZE_IMAGES) {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            } else {
+                                onNavigateToRoute(tool.route)
+                            }
+                        },
                     color = SurfaceContainerLowest,
                     shape = RoundedCornerShape(16.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -218,7 +244,7 @@ fun HomeScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(48.dp)) // Ensures FAB & Bottom Nav never obscure last items
+                Spacer(modifier = Modifier.height(48.dp))
             }
         }
     }

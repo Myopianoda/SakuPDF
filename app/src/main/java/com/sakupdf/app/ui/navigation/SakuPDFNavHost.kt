@@ -69,11 +69,6 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startProcessing("Membuat PDF") {
-                        navController.navigate(Routes.RESULT_SUCCESS) {
-                            popUpTo(Routes.HOME)
-                        }
-                    }
                     navController.navigate(Routes.PROCESSING)
                 }
             )
@@ -83,7 +78,7 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startProcessing("Menggabungkan PDF") {
+                    viewModel.startDummyProcessing("Menggabungkan PDF") {
                         navController.navigate(Routes.RESULT_SUCCESS) {
                             popUpTo(Routes.HOME)
                         }
@@ -97,7 +92,7 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startProcessing("Memisahkan PDF") {
+                    viewModel.startDummyProcessing("Memisahkan PDF") {
                         navController.navigate(Routes.RESULT_SUCCESS) {
                             popUpTo(Routes.HOME)
                         }
@@ -111,7 +106,7 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startProcessing("Mengompres PDF") {
+                    viewModel.startDummyProcessing("Mengompres PDF") {
                         navController.navigate(Routes.RESULT_SUCCESS) {
                             popUpTo(Routes.HOME)
                         }
@@ -125,7 +120,7 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startProcessing("Mengubah PDF ke Gambar") {
+                    viewModel.startDummyProcessing("Mengubah PDF ke Gambar") {
                         navController.navigate(Routes.RESULT_SUCCESS) {
                             popUpTo(Routes.HOME)
                         }

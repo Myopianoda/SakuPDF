@@ -1,5 +1,6 @@
 package com.sakupdf.app.model
 
+import android.net.Uri
 import androidx.compose.ui.graphics.vector.ImageVector
 
 data class PdfDocument(
@@ -10,7 +11,8 @@ data class PdfDocument(
     val pages: Int,
     val isPdf: Boolean = true,
     val location: String = "/storage/emulated/0/Documents/SakuPDF",
-    val status: String = "Dokumen dipindai dan diamankan"
+    val status: String = "Dokumen dipindai dan diamankan",
+    val uri: Uri? = null
 )
 
 data class ToolItem(
@@ -23,6 +25,7 @@ data class ToolItem(
 
 data class ImageItem(
     val id: String,
+    val uri: Uri,
     val name: String,
     val rotation: Float = 0f
 )
@@ -49,3 +52,26 @@ enum class SplitMethod(val title: String, val description: String) {
     CUSTOM("Rentang halaman khusus", "Pilih halaman spesifik untuk dipisahkan"),
     VISUAL("Pilih visual", "Pilih halaman dari pratinjau thumbnail")
 }
+
+data class PdfSettings(
+    val filename: String = "",
+    val pageSize: String = "Otomatis",
+    val orientation: String = "Potret",
+    val margin: String = "Tanpa margin",
+    val quality: String = "Seimbang (Default)"
+)
+
+data class ConversionProgress(
+    val processedPages: Int = 0,
+    val totalPages: Int = 0,
+    val percentage: Float = 0f,
+    val currentFileName: String = "",
+    val title: String = "Membuat PDF"
+)
+
+data class ConversionResult(
+    val uri: Uri,
+    val filename: String,
+    val sizeFormatted: String,
+    val pages: Int
+)

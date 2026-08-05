@@ -12,8 +12,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sakupdf.app.ui.theme.PrimaryContainer
 import com.sakupdf.app.ui.viewmodel.SakuPDFViewModel
@@ -24,6 +26,33 @@ fun ProcessingScreen(
     onCancel: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val progress = uiState.conversionProgress
+
+    if (uiState.isCancelConfirmDialogVisible) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissCancelConversion() },
+            title = { Text("Batalkan Pembuatan PDF?") },
+            text = { Text("Proses pembuatan PDF yang sedang berjalan akan dihentikan.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.confirmCancelConversion(context.contentResolver) {
+                            onCancel()
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Batalkan PDF")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissCancelConversion() }) {
+                    Text("Lanjutkan Proses")
+                }
+            }
+        )
+    }
 
     Scaffold { paddingValues ->
         Column(
@@ -35,7 +64,7 @@ fun ProcessingScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = uiState.processingTitle,
+                text = progress.title.ifBlank { "Membuat PDF" },
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
@@ -49,7 +78,7 @@ fun ProcessingScreen(
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(
-                    progress = { uiState.processingProgress },
+                    progress = { progress.percentage },
                     modifier = Modifier.fillMaxSize(),
                     strokeWidth = 10.dp,
                     color = MaterialTheme.colorScheme.primary,
@@ -64,7 +93,7 @@ fun ProcessingScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${(uiState.processingProgress * 100).toInt()}%",
+                        text = "${(progress.percentage * 100).toInt()}%",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -75,10 +104,24 @@ fun ProcessingScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = uiState.processingPageText,
+                text = if (progress.totalPages > 0) {
+                    "Memproses halaman ${progress.processedPages} dari ${progress.totalPages}"
+                } else "Memproses...",
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
             )
+
+            if (progress.currentFileName.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = progress.currentFileName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -109,7 +152,7 @@ fun ProcessingScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             OutlinedButton(
-                onClick = onCancel,
+                onClick = { viewModel.requestCancelConversion() },
                 shape = CircleShape,
                 modifier = Modifier.fillMaxWidth(0.6f)
             ) {
