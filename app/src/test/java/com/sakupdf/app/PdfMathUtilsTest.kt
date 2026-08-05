@@ -2,6 +2,7 @@ package com.sakupdf.app
 
 import com.sakupdf.app.domain.PdfMathUtils
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,6 +15,42 @@ class PdfMathUtilsTest {
         assertEquals("MyDoc.pdf", PdfMathUtils.sanitizeFilename("MyDoc"))
         assertEquals("MyDoc.pdf", PdfMathUtils.sanitizeFilename("MyDoc.pdf"))
         assertEquals("Doc_Name.pdf", PdfMathUtils.sanitizeFilename("Doc*Name?.pdf"))
+        assertEquals("CleanDoc.pdf", PdfMathUtils.sanitizeFilename("CleanDoc.pdf.pdf"))
+        assertEquals("NestedExt.pdf", PdfMathUtils.sanitizeFilename("NestedExt.PDF.pdf.PDF"))
+        assertEquals("ControlChar.pdf", PdfMathUtils.sanitizeFilename("Control\u0000Char\u001F.pdf"))
+    }
+
+    @Test
+    fun testDuplicateUriFilteringAndCapping() {
+        val existingUris = listOf("uri://1", "uri://2", "uri://3")
+        val incomingUris = listOf("uri://2", "uri://4", "uri://4", "uri://5", "uri://6")
+
+        val (filtered, wasTruncated) = PdfMathUtils.filterAndCapImageItems(
+            existingItems = existingUris,
+            incomingItems = incomingUris,
+            getUriKey = { it },
+            maxAllowed = 30
+        )
+
+        assertEquals(listOf("uri://4", "uri://5", "uri://6"), filtered)
+        assertFalse(wasTruncated)
+    }
+
+    @Test
+    fun testMax30ImagesEnforcement() {
+        val existingUris = (1..28).map { "uri://$it" }
+        val incomingUris = (29..35).map { "uri://$it" }
+
+        val (filtered, wasTruncated) = PdfMathUtils.filterAndCapImageItems(
+            existingItems = existingUris,
+            incomingItems = incomingUris,
+            getUriKey = { it },
+            maxAllowed = 30
+        )
+
+        assertEquals(2, filtered.size) // Only 29 and 30 added
+        assertEquals(listOf("uri://29", "uri://30"), filtered)
+        assertTrue(wasTruncated)
     }
 
     @Test

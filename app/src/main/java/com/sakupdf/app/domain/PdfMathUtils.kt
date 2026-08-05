@@ -5,22 +5,55 @@ import android.graphics.RectF
 object PdfMathUtils {
 
     fun sanitizeFilename(rawName: String): String {
-        val trimmed = rawName.trim()
+        var trimmed = rawName.trim()
         if (trimmed.isEmpty()) return "SakuPDF_Document.pdf"
 
-        // Replace illegal characters for filenames
+        // Strip control characters
+        trimmed = trimmed.replace(Regex("[\\u0000-\\u001F\\u007F-\\u009F]"), "")
+        if (trimmed.isEmpty()) return "SakuPDF_Document.pdf"
+
+        // Replace illegal path characters with underscore
         var sanitized = trimmed.replace(Regex("[\\\\/:*?\"<>|]"), "_")
 
-        // Ensure single .pdf extension
-        if (sanitized.endsWith(".pdf", ignoreCase = true)) {
-            val baseName = sanitized.substring(0, sanitized.length - 4).trimEnd('.', '_')
-            if (baseName.isEmpty()) return "SakuPDF_Document.pdf"
-            return "$baseName.pdf"
+        // Repeatedly strip trailing .pdf (case insensitive) to prevent .pdf.pdf
+        while (sanitized.endsWith(".pdf", ignoreCase = true)) {
+            sanitized = sanitized.substring(0, sanitized.length - 4)
         }
 
-        sanitized = sanitized.trimEnd('.', '_')
+        // Clean trailing dots, underscores, or spaces
+        sanitized = sanitized.trim('.', '_', ' ')
+
         if (sanitized.isEmpty()) return "SakuPDF_Document.pdf"
+
         return "$sanitized.pdf"
+    }
+
+    fun <T> filterAndCapImageItems(
+        existingItems: List<T>,
+        incomingItems: List<T>,
+        getUriKey: (T) -> String,
+        maxAllowed: Int = 30
+    ): Pair<List<T>, Boolean> {
+        val existingKeys = existingItems.map(getUriKey).toSet()
+        val uniqueIncoming = mutableListOf<T>()
+        val seenIncomingKeys = mutableSetOf<String>()
+
+        var wasTruncated = false
+
+        for (item in incomingItems) {
+            val key = getUriKey(item)
+            if (!existingKeys.contains(key) && seenIncomingKeys.add(key)) {
+                if (existingItems.size + uniqueIncoming.size < maxAllowed) {
+                    uniqueIncoming.add(item)
+                } else {
+                    wasTruncated = true
+                }
+            } else if (existingKeys.contains(key)) {
+                // Duplicate URI ignored
+            }
+        }
+
+        return Pair(uniqueIncoming, wasTruncated)
     }
 
     fun calculatePageSizePoints(

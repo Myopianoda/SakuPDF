@@ -51,6 +51,7 @@ data class SakuPDFUiState(
     val conversionResult: ConversionResult? = null,
     val lastGeneratedDocument: PdfDocument = initialDummyDocuments.first(),
     val errorMessage: String? = null,
+    val userNotificationMessage: String? = null,
     val themeOption: ThemeOption = ThemeOption.SYSTEM,
     val storageLocation: String = "/storage/emulated/0/Documents/SakuPDF",
     val deleteCandidate: PdfDocument? = null
@@ -97,29 +98,38 @@ class SakuPDFViewModel : ViewModel() {
     fun addImagesFromUris(contentResolver: ContentResolver, uris: List<Uri>) {
         if (uris.isEmpty()) return
 
-        val currentList = _uiState.value.imagesToConvert.toMutableList()
-        val existingUris = currentList.map { it.uri }.toSet()
-
-        val maxAllowed = 30
-        for (uri in uris) {
-            if (currentList.size >= maxAllowed) break
-            if (existingUris.contains(uri)) continue
-
-            val displayName = queryUriDisplayName(contentResolver, uri)
-                ?: "Gambar_${currentList.size + 1}.jpg"
-
-            currentList.add(
-                ImageItem(
-                    id = UUID.randomUUID().toString(),
-                    uri = uri,
-                    name = displayName,
-                    rotation = 0f
-                )
+        val currentList = _uiState.value.imagesToConvert
+        val incomingItems = uris.map { uri ->
+            val displayName = queryUriDisplayName(contentResolver, uri) ?: "Gambar.jpg"
+            ImageItem(
+                id = UUID.randomUUID().toString(),
+                uri = uri,
+                name = displayName,
+                rotation = 0f
             )
         }
 
-        _uiState.update { it.copy(imagesToConvert = currentList) }
+        val (newUniqueItems, wasTruncated) = PdfMathUtils.filterAndCapImageItems(
+            existingItems = currentList,
+            incomingItems = incomingItems,
+            getUriKey = { it.uri.toString() },
+            maxAllowed = 30
+        )
+
+        val updatedList = currentList + newUniqueItems
+
+        _uiState.update { state ->
+            state.copy(
+                imagesToConvert = updatedList,
+                userNotificationMessage = if (wasTruncated) "Maksimal 30 gambar. Gambar lainnya tidak ditambahkan." else null
+            )
+        }
+
         generateDefaultPdfFilename()
+    }
+
+    fun clearNotificationMessage() {
+        _uiState.update { it.copy(userNotificationMessage = null) }
     }
 
     private fun queryUriDisplayName(contentResolver: ContentResolver, uri: Uri): String? {
@@ -186,8 +196,9 @@ class SakuPDFViewModel : ViewModel() {
     }
 
     fun setPdfExportName(name: String) {
+        val sanitized = PdfMathUtils.sanitizeFilename(name)
         _uiState.update { state ->
-            state.copy(pdfSettings = state.pdfSettings.copy(filename = name))
+            state.copy(pdfSettings = state.pdfSettings.copy(filename = sanitized))
         }
     }
 

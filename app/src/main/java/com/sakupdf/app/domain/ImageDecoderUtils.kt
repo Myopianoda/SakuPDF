@@ -37,10 +37,8 @@ object ImageDecoderUtils {
         maxDimension: Int,
         userRotationDegrees: Float
     ): Bitmap? {
-        val exifDegrees = getExifOrientationDegrees(contentResolver, uri)
-        val totalRotation = (exifDegrees + userRotationDegrees) % 360f
-
         var bitmap: Bitmap? = null
+        var neededMatrixRotation = 0f
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
@@ -55,6 +53,9 @@ object ImageDecoderUtils {
                     }
                     decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
                 }
+                // ImageDecoder automatically normalizes EXIF orientation on API 28+
+                // Apply manual user rotation ONLY
+                neededMatrixRotation = (userRotationDegrees % 360f + 360f) % 360f
             } catch (_: Exception) {
                 bitmap = null
             }
@@ -89,6 +90,11 @@ object ImageDecoderUtils {
                 contentResolver.openInputStream(uri)?.use { stream ->
                     bitmap = BitmapFactory.decodeStream(stream, null, decodeOptions)
                 }
+
+                // BitmapFactory does NOT auto-apply EXIF.
+                // Apply EXIF rotation + manual user rotation exactly once.
+                val exifDegrees = getExifOrientationDegrees(contentResolver, uri)
+                neededMatrixRotation = ((exifDegrees + userRotationDegrees) % 360f + 360f) % 360f
             } catch (_: Exception) {
                 bitmap = null
             }
@@ -96,10 +102,10 @@ object ImageDecoderUtils {
 
         val baseBitmap = bitmap ?: return null
 
-        // Apply total rotation matrix if needed
-        if (totalRotation != 0f) {
+        // Apply matrix rotation if needed
+        if (neededMatrixRotation != 0f) {
             try {
-                val matrix = Matrix().apply { postRotate(totalRotation) }
+                val matrix = Matrix().apply { postRotate(neededMatrixRotation) }
                 val rotated = Bitmap.createBitmap(
                     baseBitmap,
                     0,
