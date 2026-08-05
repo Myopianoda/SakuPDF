@@ -63,6 +63,16 @@ fun HomeScreen(
         }
     }
 
+    // Document Picker launcher for Merge PDF
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.addPdfsToMerge(context.contentResolver, uris)
+            onNavigateToRoute(Routes.MERGE_PDF)
+        }
+    }
+
     val tools = listOf(
         ToolGridItem("Gambar ke PDF", "Gabungkan beberapa gambar menjadi satu PDF", Icons.Default.Collections, Routes.ORGANIZE_IMAGES),
         ToolGridItem("Gabungkan PDF", "Satukan beberapa file PDF", Icons.AutoMirrored.Filled.CallMerge, Routes.MERGE_PDF),
@@ -164,12 +174,18 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
                         .clickable {
-                            if (tool.route == Routes.ORGANIZE_IMAGES) {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            } else {
-                                onNavigateToRoute(tool.route)
+                            when (tool.route) {
+                                Routes.ORGANIZE_IMAGES -> {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                }
+                                Routes.MERGE_PDF -> {
+                                    pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                                }
+                                else -> {
+                                    onNavigateToRoute(tool.route)
+                                }
                             }
                         },
                     color = SurfaceContainerLowest,

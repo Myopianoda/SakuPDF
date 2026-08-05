@@ -54,6 +54,7 @@ dependencies {
 
     implementation(libs.androidx.exifinterface)
     implementation(libs.coil.compose)
+    implementation(libs.pdfbox.android)
 
     testImplementation(libs.junit)
 

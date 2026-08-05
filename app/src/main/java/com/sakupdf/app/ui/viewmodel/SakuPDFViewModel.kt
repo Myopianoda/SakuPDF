@@ -1,6 +1,7 @@
 package com.sakupdf.app.ui.viewmodel
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -8,6 +9,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sakupdf.app.domain.AppLogger
 import com.sakupdf.app.domain.ImageToPdfConverter
+import com.sakupdf.app.domain.MergePdfConverter
+import com.sakupdf.app.domain.PdfDocumentInspector
 import com.sakupdf.app.domain.PdfMathUtils
 import com.sakupdf.app.model.CompressionLevel
 import com.sakupdf.app.model.ConversionProgress
@@ -37,7 +40,9 @@ data class SakuPDFUiState(
     val imagesToConvert: List<ImageItem> = emptyList(),
     val pdfSettings: PdfSettings = PdfSettings(),
     val isClearAllImagesDialogVisible: Boolean = false,
-    val pdfsToMerge: List<PdfDocument> = initialDummyMergePdfs,
+    val pdfsToMerge: List<PdfDocument> = emptyList(),
+    val mergePdfFilename: String = "",
+    val isClearAllMergePdfsDialogVisible: Boolean = false,
     val splitMethod: SplitMethod = SplitMethod.ALL,
     val splitCustomRange: String = "1-5, 8, 11-14",
     val splitPageItems: List<PageItem> = (1..6).map { PageItem(it, it % 2 != 0) },
@@ -87,6 +92,7 @@ class SakuPDFViewModel : ViewModel() {
 
     init {
         generateDefaultPdfFilename()
+        generateDefaultMergePdfFilename()
     }
 
     private fun generateDefaultPdfFilename() {
@@ -99,6 +105,20 @@ class SakuPDFViewModel : ViewModel() {
         _uiState.update { state ->
             if (state.pdfSettings.filename.isBlank()) {
                 state.copy(pdfSettings = state.pdfSettings.copy(filename = defaultName))
+            } else state
+        }
+    }
+
+    private fun generateDefaultMergePdfFilename() {
+        val defaultName = try {
+            val sdf = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+            "PDF_Gabungan_${sdf.format(Date())}.pdf"
+        } catch (_: Throwable) {
+            "PDF_Gabungan_Document.pdf"
+        }
+        _uiState.update { state ->
+            if (state.mergePdfFilename.isBlank()) {
+                state.copy(mergePdfFilename = defaultName)
             } else state
         }
     }
@@ -134,6 +154,45 @@ class SakuPDFViewModel : ViewModel() {
         }
 
         generateDefaultPdfFilename()
+    }
+
+    fun addPdfsToMerge(contentResolver: ContentResolver, uris: List<Uri>) {
+        if (uris.isEmpty()) return
+
+        val currentList = _uiState.value.pdfsToMerge
+        val incomingDocs = uris.map { uri ->
+            val (name, sizeStr) = PdfDocumentInspector.queryPdfFileDetails(contentResolver, uri)
+            val pages = PdfDocumentInspector.getRealPdfPageCount(contentResolver, uri)
+            val isEncrypted = PdfDocumentInspector.isPdfPasswordProtected(contentResolver, uri)
+
+            PdfDocument(
+                id = UUID.randomUUID().toString(),
+                name = name,
+                sizeFormatted = sizeStr,
+                dateFormatted = "Hari ini",
+                pages = pages,
+                isPdf = true,
+                uri = uri
+            )
+        }
+
+        val (newUniqueDocs, wasTruncated) = PdfMathUtils.filterAndCapImageItems(
+            existingItems = currentList,
+            incomingItems = incomingDocs,
+            getUriKey = { it.uri?.toString() ?: it.id },
+            maxAllowed = 20
+        )
+
+        val updatedList = currentList + newUniqueDocs
+
+        _uiState.update { state ->
+            state.copy(
+                pdfsToMerge = updatedList,
+                userNotificationMessage = if (wasTruncated) "Maksimal 20 file PDF. File lainnya tidak ditambahkan." else null
+            )
+        }
+
+        generateDefaultMergePdfFilename()
     }
 
     fun clearNotificationMessage() {
@@ -201,6 +260,52 @@ class SakuPDFViewModel : ViewModel() {
 
     fun dismissClearAllImages() {
         _uiState.update { it.copy(isClearAllImagesDialogVisible = false) }
+    }
+
+    // Merge PDF Organization Methods
+    fun moveMergePdfUp(index: Int) {
+        if (index <= 0) return
+        _uiState.update { state ->
+            val list = state.pdfsToMerge.toMutableList()
+            val item = list.removeAt(index)
+            list.add(index - 1, item)
+            state.copy(pdfsToMerge = list)
+        }
+    }
+
+    fun moveMergePdfDown(index: Int) {
+        val currentSize = _uiState.value.pdfsToMerge.size
+        if (index >= currentSize - 1) return
+        _uiState.update { state ->
+            val list = state.pdfsToMerge.toMutableList()
+            val item = list.removeAt(index)
+            list.add(index + 1, item)
+            state.copy(pdfsToMerge = list)
+        }
+    }
+
+    fun deleteMergePdf(id: String) {
+        _uiState.update { state ->
+            val updated = state.pdfsToMerge.filter { it.id != id }
+            state.copy(pdfsToMerge = updated)
+        }
+    }
+
+    fun requestClearAllMergePdfs() {
+        _uiState.update { it.copy(isClearAllMergePdfsDialogVisible = true) }
+    }
+
+    fun confirmClearAllMergePdfs() {
+        _uiState.update { it.copy(pdfsToMerge = emptyList(), isClearAllMergePdfsDialogVisible = false) }
+    }
+
+    fun dismissClearAllMergePdfs() {
+        _uiState.update { it.copy(isClearAllMergePdfsDialogVisible = false) }
+    }
+
+    fun setMergePdfFilename(name: String) {
+        val sanitized = PdfMathUtils.sanitizeFilename(name)
+        _uiState.update { it.copy(mergePdfFilename = sanitized) }
     }
 
     fun setPdfExportName(name: String) {
@@ -280,7 +385,7 @@ class SakuPDFViewModel : ViewModel() {
 
             result.fold(
                 onSuccess = { res ->
-                    AppLogger.d(TAG, "Conversion succeeded in ViewModel. Emitting success state.")
+                    AppLogger.d(TAG, "ImageToPdf Conversion succeeded.")
                     val newDoc = PdfDocument(
                         id = UUID.randomUUID().toString(),
                         name = res.filename,
@@ -301,12 +406,94 @@ class SakuPDFViewModel : ViewModel() {
                     }
                 },
                 onFailure = { err ->
-                    AppLogger.e(TAG, "Conversion failed in ViewModel: ${err.message}")
+                    AppLogger.e(TAG, "ImageToPdf Conversion failed: ${err.message}")
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
                             shouldNavigateToSuccess = false,
                             errorMessage = err.localizedMessage ?: "Gagal membuat PDF. Silakan coba lagi."
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun startRealMergePdfConversion(
+        contentResolver: ContentResolver,
+        context: Context,
+        targetUri: Uri,
+        onNavigateToProcessing: () -> Unit
+    ) {
+        val pdfItems = _uiState.value.pdfsToMerge
+        if (pdfItems.size < 2) {
+            _uiState.update { it.copy(errorMessage = "Pilih setidaknya 2 file PDF untuk digabungkan.") }
+            return
+        }
+
+        AppLogger.d(TAG, "startRealMergePdfConversion called for ${pdfItems.size} PDFs.")
+
+        activeTargetUri = targetUri
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                errorMessage = null,
+                conversionResult = null,
+                shouldNavigateToSuccess = false,
+                conversionProgress = ConversionProgress(
+                    processedPages = 0,
+                    totalPages = pdfItems.size,
+                    percentage = 0f,
+                    currentFileName = pdfItems.first().name,
+                    title = "Membaca 1 dari ${pdfItems.size} file"
+                )
+            )
+        }
+
+        onNavigateToProcessing()
+
+        activeConversionJob = viewModelScope.launch {
+            val filename = _uiState.value.mergePdfFilename
+            val result = MergePdfConverter.merge(
+                context = context,
+                contentResolver = contentResolver,
+                pdfItems = pdfItems,
+                targetUri = targetUri,
+                outputFilename = filename,
+                onProgress = { progress ->
+                    _uiState.update { it.copy(conversionProgress = progress) }
+                }
+            )
+
+            result.fold(
+                onSuccess = { res ->
+                    AppLogger.d(TAG, "PDF Merge succeeded.")
+                    val newDoc = PdfDocument(
+                        id = UUID.randomUUID().toString(),
+                        name = res.filename,
+                        sizeFormatted = res.sizeFormatted,
+                        dateFormatted = "Hari ini",
+                        pages = res.pages,
+                        uri = res.uri
+                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            conversionResult = res,
+                            lastGeneratedDocument = newDoc,
+                            activeDocument = newDoc,
+                            documents = listOf(newDoc) + state.documents,
+                            shouldNavigateToSuccess = true
+                        )
+                    }
+                },
+                onFailure = { err ->
+                    AppLogger.e(TAG, "PDF Merge failed: ${err.message}")
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            shouldNavigateToSuccess = false,
+                            errorMessage = err.localizedMessage ?: "Gagal menggabungkan PDF. Silakan coba lagi."
                         )
                     }
                 }
@@ -401,6 +588,18 @@ class SakuPDFViewModel : ViewModel() {
             )
         }
         generateDefaultPdfFilename()
+    }
+
+    fun clearMergePdfState() {
+        _uiState.update { state ->
+            state.copy(
+                pdfsToMerge = emptyList(),
+                conversionResult = null,
+                shouldNavigateToSuccess = false,
+                mergePdfFilename = ""
+            )
+        }
+        generateDefaultMergePdfFilename()
     }
 
     fun setFilter(filter: String) {
