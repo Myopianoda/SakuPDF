@@ -40,6 +40,7 @@ fun SettingsScreen(
     onNavigateToRoute: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Scaffold(
         topBar = {
@@ -84,7 +85,7 @@ fun SettingsScreen(
                         ) {
                             RadioButton(
                                 selected = uiState.themeOption == option,
-                                onClick = { viewModel.setThemeOption(option) }
+                                onClick = { viewModel.setThemeOption(option, context) }
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(

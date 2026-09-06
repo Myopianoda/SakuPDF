@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.sakupdf.app.model.PdfDocument
@@ -31,18 +32,40 @@ fun FileListScreen(
     onNavigateToRoute: (String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var isSearchActive by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
-    val filteredDocs = when (uiState.selectedFilter) {
+    val categoryDocs = when (uiState.selectedFilter) {
         "PDF" -> uiState.documents.filter { it.isPdf }
         "Gambar" -> uiState.documents.filter { !it.isPdf }
         else -> uiState.documents
     }
 
+    val searchedDocs = if (uiState.searchQuery.isBlank()) {
+        categoryDocs
+    } else {
+        categoryDocs.filter { it.name.contains(uiState.searchQuery, ignoreCase = true) }
+    }
+
+    val filteredDocs = when (uiState.sortOrder) {
+        "NAME_ASC" -> searchedDocs.sortedBy { it.name.lowercase() }
+        "DATE_ASC" -> searchedDocs.reversed()
+        else -> searchedDocs
+    }
+
     if (uiState.deleteCandidate != null) {
         ConfirmDeleteDialog(
             fileName = uiState.deleteCandidate!!.name,
-            onConfirm = { viewModel.confirmDelete() },
+            onConfirm = { viewModel.confirmDelete(context) },
             onDismiss = { viewModel.dismissDelete() }
+        )
+    }
+
+    if (uiState.renameCandidate != null) {
+        com.sakupdf.app.ui.components.RenameDocumentDialog(
+            initialName = uiState.renameCandidate!!.name,
+            onConfirm = { newName -> viewModel.confirmRename(newName, context) },
+            onDismiss = { viewModel.dismissRename() }
         )
     }
 
@@ -51,10 +74,13 @@ fun FileListScreen(
             SakuPDFTopAppBar(
                 title = "Berkas",
                 actions = {
-                    IconButton(onClick = { }) {
+                    IconButton(onClick = {
+                        isSearchActive = !isSearchActive
+                        if (!isSearchActive) viewModel.setSearchQuery("")
+                    }) {
                         Icon(Icons.Default.Search, contentDescription = "Cari")
                     }
-                    IconButton(onClick = { }) {
+                    IconButton(onClick = { viewModel.toggleSortOrder() }) {
                         Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Urutkan")
                     }
                 }
@@ -72,6 +98,19 @@ fun FileListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            if (isSearchActive) {
+                OutlinedTextField(
+                    value = uiState.searchQuery,
+                    onValueChange = { viewModel.setSearchQuery(it) },
+                    placeholder = { Text("Cari nama berkas...") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    singleLine = true,
+                    shape = CircleShape
+                )
+            }
+
             // Filter Chips Row (with horizontal scroll for narrow screens)
             Row(
                 modifier = Modifier

@@ -7,6 +7,8 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sakupdf.app.domain.AppSettingsManager
+import com.sakupdf.app.domain.DocumentHistoryManager
 import com.sakupdf.app.domain.AppLogger
 import com.sakupdf.app.domain.CompressPdfConverter
 import com.sakupdf.app.domain.ImageToPdfConverter
@@ -67,7 +69,10 @@ data class SakuPDFUiState(
     val userNotificationMessage: String? = null,
     val themeOption: ThemeOption = ThemeOption.SYSTEM,
     val storageLocation: String = "/storage/emulated/0/Documents/SakuPDF",
-    val deleteCandidate: PdfDocument? = null
+    val deleteCandidate: PdfDocument? = null,
+    val renameCandidate: PdfDocument? = null,
+    val searchQuery: String = "",
+    val sortOrder: String = "DATE_DESC"
 )
 
 val initialDummyDocuments = listOf(
@@ -346,6 +351,7 @@ class SakuPDFViewModel : ViewModel() {
     }
 
     fun startRealImageToPdfConversion(
+        context: Context? = null,
         contentResolver: ContentResolver,
         targetUri: Uri,
         onNavigateToProcessing: () -> Unit
@@ -400,6 +406,11 @@ class SakuPDFViewModel : ViewModel() {
                         pages = res.pages,
                         uri = res.uri
                     )
+                    if (context != null) {
+                        try {
+                            DocumentHistoryManager.addDocument(context, newDoc)
+                        } catch (_: Exception) {}
+                    }
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
@@ -482,6 +493,9 @@ class SakuPDFViewModel : ViewModel() {
                         pages = res.pages,
                         uri = res.uri
                     )
+                    try {
+                        DocumentHistoryManager.addDocument(context, newDoc)
+                    } catch (_: Exception) {}
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
@@ -724,6 +738,9 @@ class SakuPDFViewModel : ViewModel() {
                         uri = res.uri,
                         isPdf = true
                     )
+                    try {
+                        DocumentHistoryManager.addDocument(context, newDoc)
+                    } catch (_: Exception) {}
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
@@ -817,6 +834,9 @@ class SakuPDFViewModel : ViewModel() {
                         uri = res.uri,
                         isPdf = true
                     )
+                    try {
+                        DocumentHistoryManager.addDocument(context, newDoc)
+                    } catch (_: Exception) {}
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
@@ -936,6 +956,9 @@ class SakuPDFViewModel : ViewModel() {
                         uri = res.uri,
                         isPdf = false
                     )
+                    try {
+                        DocumentHistoryManager.addDocument(context, newDoc)
+                    } catch (_: Exception) {}
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
@@ -961,25 +984,108 @@ class SakuPDFViewModel : ViewModel() {
         }
     }
 
-    fun setThemeOption(option: ThemeOption) {
+    fun loadPersistedData(context: Context) {
+        val theme = AppSettingsManager.getThemeOption(context)
+        val defaultQuality = AppSettingsManager.getDefaultQuality(context)
+        val defaultPageSize = AppSettingsManager.getDefaultPageSize(context)
+        val defaultMargin = AppSettingsManager.getDefaultMargin(context)
+        val defaultCompressionStr = AppSettingsManager.getDefaultCompression(context)
+        val compLevel = when (defaultCompressionStr) {
+            "Kualitas tinggi" -> CompressionLevel.HIGH
+            "Ukuran minimum" -> CompressionLevel.MINIMUM
+            else -> CompressionLevel.BALANCED
+        }
+
+        val history = DocumentHistoryManager.loadHistory(context)
+        _uiState.update { state ->
+            state.copy(
+                themeOption = theme,
+                pdfSettings = state.pdfSettings.copy(
+                    pageSize = defaultPageSize,
+                    margin = defaultMargin,
+                    quality = defaultQuality
+                ),
+                compressionLevel = compLevel,
+                documents = if (history.isNotEmpty()) history else state.documents
+            )
+        }
+    }
+
+    fun setThemeOption(option: ThemeOption, context: Context? = null) {
+        if (context != null) {
+            AppSettingsManager.saveThemeOption(context, option)
+        }
         _uiState.update { it.copy(themeOption = option) }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun toggleSortOrder() {
+        _uiState.update { state ->
+            val nextOrder = when (state.sortOrder) {
+                "DATE_DESC" -> "NAME_ASC"
+                "NAME_ASC" -> "DATE_ASC"
+                else -> "DATE_DESC"
+            }
+            state.copy(sortOrder = nextOrder)
+        }
     }
 
     fun requestDelete(doc: PdfDocument) {
         _uiState.update { it.copy(deleteCandidate = doc) }
     }
 
-    fun confirmDelete() {
+    fun confirmDelete(context: Context? = null) {
         _uiState.update { state ->
             val candidate = state.deleteCandidate
             if (candidate != null) {
-                val updatedDocs = state.documents.filter { it.id != candidate.id }
-                state.copy(documents = updatedDocs, deleteCandidate = null)
+                val updatedDocs = if (context != null) {
+                    val (_, list) = DocumentHistoryManager.deleteDocumentSaf(context, context.contentResolver, candidate)
+                    list
+                } else {
+                    state.documents.filter { it.id != candidate.id }
+                }
+                state.copy(
+                    documents = updatedDocs,
+                    activeDocument = if (state.activeDocument?.id == candidate.id) null else state.activeDocument,
+                    deleteCandidate = null
+                )
             } else state
         }
     }
 
     fun dismissDelete() {
         _uiState.update { it.copy(deleteCandidate = null) }
+    }
+
+    fun requestRename(doc: PdfDocument) {
+        _uiState.update { it.copy(renameCandidate = doc) }
+    }
+
+    fun confirmRename(newName: String, context: Context? = null) {
+        _uiState.update { state ->
+            val candidate = state.renameCandidate
+            if (candidate != null && newName.isNotBlank()) {
+                val (updatedDoc, updatedList) = if (context != null) {
+                    DocumentHistoryManager.renameDocumentSaf(context, context.contentResolver, candidate, newName)
+                } else {
+                    val renamed = candidate.copy(name = if (candidate.isPdf) PdfMathUtils.sanitizeFilename(newName) else newName)
+                    Pair(renamed, state.documents.map { if (it.id == candidate.id) renamed else it })
+                }
+                state.copy(
+                    documents = updatedList,
+                    activeDocument = if (state.activeDocument?.id == candidate.id) updatedDoc else state.activeDocument,
+                    renameCandidate = null
+                )
+            } else {
+                state.copy(renameCandidate = null)
+            }
+        }
+    }
+
+    fun dismissRename() {
+        _uiState.update { it.copy(renameCandidate = null) }
     }
 }
