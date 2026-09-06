@@ -48,8 +48,10 @@ object ImageDecoderUtils {
                     val origH = info.size.height
                     val maxSide = max(origW, origH)
                     if (maxSide > maxDimension && maxDimension > 0) {
-                        val sampleSize = maxSide / maxDimension
-                        decoder.setTargetSampleSize(sampleSize.coerceAtLeast(1))
+                        val scale = maxDimension.toFloat() / maxSide.toFloat()
+                        val targetW = (origW * scale).toInt().coerceAtLeast(1)
+                        val targetH = (origH * scale).toInt().coerceAtLeast(1)
+                        decoder.setTargetSize(targetW, targetH)
                     }
                     decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
                 }

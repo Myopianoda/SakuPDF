@@ -1,6 +1,7 @@
 package com.sakupdf.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -18,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import com.sakupdf.app.ui.components.PageGrid
 import com.sakupdf.app.ui.components.SakuPDFTopAppBar
 import com.sakupdf.app.ui.theme.PrimaryContainer
@@ -32,7 +36,29 @@ fun PdfToImageScreen(
     onStartProcess: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val selectedCount = uiState.pdfToImagePages.count { it.isSelected }
+
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.setPdfToImageSourcePdf(context.contentResolver, uri)
+        }
+    }
+
+    val destinationFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri != null) {
+            viewModel.startRealPdfToImageConversion(
+                context = context,
+                contentResolver = context.contentResolver,
+                destinationTreeUri = treeUri,
+                onNavigateToProcessing = onStartProcess
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -50,13 +76,22 @@ fun PdfToImageScreen(
             ) {
                 Box(modifier = Modifier.padding(16.dp)) {
                     Button(
-                        onClick = onStartProcess,
+                        onClick = {
+                            val source = uiState.pdfToImageSourcePdf
+                            if (source == null || source.uri == null) {
+                                pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                            } else if (selectedCount == 0) {
+                                viewModel.setErrorMessage("Pilih setidaknya 1 halaman untuk diubah ke gambar.")
+                            } else {
+                                destinationFolderLauncher.launch(null)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = CircleShape
                     ) {
                         Icon(Icons.Default.Image, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Ubah ke Gambar")
+                        Text(if (uiState.pdfToImageSourcePdf == null) "Pilih Dokumen PDF" else "Pilih Folder & Ubah ($selectedCount)")
                     }
                 }
             }
@@ -71,8 +106,14 @@ fun PdfToImageScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Document Card
+            val sourceDoc = uiState.pdfToImageSourcePdf
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable {
+                        pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                    },
                 color = SurfaceContainerLowest,
                 shape = RoundedCornerShape(16.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -92,9 +133,17 @@ fun PdfToImageScreen(
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
-                        Text("Laporan_Keuangan_Q3_Final.pdf", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = sourceDoc?.name ?: "Pilih Dokumen PDF",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text("2.4 MB • 12 Halaman", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = if (sourceDoc != null) "${sourceDoc.sizeFormatted} • ${sourceDoc.pages} Halaman" else "Ketuk untuk memilih file PDF",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

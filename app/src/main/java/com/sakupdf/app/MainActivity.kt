@@ -24,6 +24,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val viewModel: SakuPDFViewModel = viewModel()
+            val context = androidx.compose.ui.platform.LocalContext.current
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                viewModel.loadPersistedData(context)
+            }
             val uiState by viewModel.uiState.collectAsState()
 
             val isDarkTheme = when (uiState.themeOption) {

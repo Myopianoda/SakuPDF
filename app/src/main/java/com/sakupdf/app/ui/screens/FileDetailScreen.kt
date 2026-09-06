@@ -43,16 +43,27 @@ fun FileDetailScreen(
     onDelete: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val doc = uiState.activeDocument ?: return
 
     if (uiState.deleteCandidate != null) {
         ConfirmDeleteDialog(
             fileName = uiState.deleteCandidate!!.name,
             onConfirm = {
-                viewModel.confirmDelete()
+                viewModel.confirmDelete(context)
                 onDelete()
             },
             onDismiss = { viewModel.dismissDelete() }
+        )
+    }
+
+    if (uiState.renameCandidate != null) {
+        com.sakupdf.app.ui.components.RenameDocumentDialog(
+            initialName = uiState.renameCandidate!!.name,
+            onConfirm = { newName ->
+                viewModel.confirmRename(newName, context)
+            },
+            onDismiss = { viewModel.dismissRename() }
         )
     }
 
@@ -151,9 +162,42 @@ fun FileDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                ActionButton("Buka", Icons.AutoMirrored.Filled.OpenInNew) {}
-                ActionButton("Bagikan", Icons.Default.Share) {}
-                ActionButton("Ubah nama", Icons.Default.Edit) {}
+                ActionButton("Buka", Icons.AutoMirrored.Filled.OpenInNew) {
+                    val uri = doc.uri
+                    if (uri != null) {
+                        try {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, if (doc.isPdf) "application/pdf" else "image/*")
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            viewModel.setErrorMessage("Tidak ada aplikasi yang dapat membuka file ini.")
+                        }
+                    } else {
+                        viewModel.setErrorMessage("File ini adalah file contoh atau lokasi tidak ditemukan.")
+                    }
+                }
+                ActionButton("Bagikan", Icons.Default.Share) {
+                    val uri = doc.uri
+                    if (uri != null) {
+                        try {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = if (doc.isPdf) "application/pdf" else "image/*"
+                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, "Bagikan Berkas"))
+                        } catch (_: Exception) {
+                            viewModel.setErrorMessage("Gagal membagikan berkas.")
+                        }
+                    } else {
+                        viewModel.setErrorMessage("File ini adalah file contoh atau lokasi tidak ditemukan.")
+                    }
+                }
+                ActionButton("Ubah nama", Icons.Default.Edit) {
+                    viewModel.requestRename(doc)
+                }
                 ActionButton(
                     "Hapus",
                     Icons.Default.Delete,

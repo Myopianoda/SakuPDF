@@ -7,9 +7,14 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sakupdf.app.domain.AppSettingsManager
+import com.sakupdf.app.domain.DocumentHistoryManager
 import com.sakupdf.app.domain.AppLogger
+import com.sakupdf.app.domain.CompressPdfConverter
 import com.sakupdf.app.domain.ImageToPdfConverter
 import com.sakupdf.app.domain.MergePdfConverter
+import com.sakupdf.app.domain.PdfToImageConverter
+import com.sakupdf.app.domain.SplitPdfConverter
 import com.sakupdf.app.domain.PdfDocumentInspector
 import com.sakupdf.app.domain.PdfMathUtils
 import com.sakupdf.app.model.CompressionLevel
@@ -43,14 +48,17 @@ data class SakuPDFUiState(
     val pdfsToMerge: List<PdfDocument> = emptyList(),
     val mergePdfFilename: String = "",
     val isClearAllMergePdfsDialogVisible: Boolean = false,
+    val splitSourcePdf: PdfDocument? = null,
     val splitMethod: SplitMethod = SplitMethod.ALL,
-    val splitCustomRange: String = "1-5, 8, 11-14",
-    val splitPageItems: List<PageItem> = (1..6).map { PageItem(it, it % 2 != 0) },
+    val splitCustomRange: String = "1-3",
+    val splitPageItems: List<PageItem> = emptyList(),
+    val compressSourcePdf: PdfDocument? = null,
     val compressionLevel: CompressionLevel = CompressionLevel.BALANCED,
+    val pdfToImageSourcePdf: PdfDocument? = null,
     val pdfToImageFormat: String = "JPG",
     val pdfToImageQuality: String = "Tinggi",
     val pdfToImageSelectAll: Boolean = false,
-    val pdfToImagePages: List<PageItem> = (1..6).map { PageItem(it, it in listOf(1, 3, 4)) },
+    val pdfToImagePages: List<PageItem> = emptyList(),
     val conversionProgress: ConversionProgress = ConversionProgress(),
     val isProcessing: Boolean = false,
     val isCancelConfirmDialogVisible: Boolean = false,
@@ -61,7 +69,10 @@ data class SakuPDFUiState(
     val userNotificationMessage: String? = null,
     val themeOption: ThemeOption = ThemeOption.SYSTEM,
     val storageLocation: String = "/storage/emulated/0/Documents/SakuPDF",
-    val deleteCandidate: PdfDocument? = null
+    val deleteCandidate: PdfDocument? = null,
+    val renameCandidate: PdfDocument? = null,
+    val searchQuery: String = "",
+    val sortOrder: String = "DATE_DESC"
 )
 
 val initialDummyDocuments = listOf(
@@ -340,6 +351,7 @@ class SakuPDFViewModel : ViewModel() {
     }
 
     fun startRealImageToPdfConversion(
+        context: Context? = null,
         contentResolver: ContentResolver,
         targetUri: Uri,
         onNavigateToProcessing: () -> Unit
@@ -378,6 +390,7 @@ class SakuPDFViewModel : ViewModel() {
                 images = images,
                 settings = settings,
                 targetUri = targetUri,
+                context = context,
                 onProgress = { progress ->
                     _uiState.update { it.copy(conversionProgress = progress) }
                 }
@@ -394,6 +407,11 @@ class SakuPDFViewModel : ViewModel() {
                         pages = res.pages,
                         uri = res.uri
                     )
+                    if (context != null) {
+                        try {
+                            DocumentHistoryManager.addDocument(context, newDoc)
+                        } catch (_: Exception) {}
+                    }
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
@@ -476,6 +494,9 @@ class SakuPDFViewModel : ViewModel() {
                         pages = res.pages,
                         uri = res.uri
                     )
+                    try {
+                        DocumentHistoryManager.addDocument(context, newDoc)
+                    } catch (_: Exception) {}
                     _uiState.update { state ->
                         state.copy(
                             isProcessing = false,
@@ -578,6 +599,10 @@ class SakuPDFViewModel : ViewModel() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    fun setErrorMessage(message: String) {
+        _uiState.update { it.copy(errorMessage = message) }
+    }
+
     fun clearImageToPdfState() {
         _uiState.update { state ->
             state.copy(
@@ -610,6 +635,27 @@ class SakuPDFViewModel : ViewModel() {
         _uiState.update { it.copy(activeDocument = doc) }
     }
 
+    fun setSplitSourcePdf(contentResolver: ContentResolver, uri: Uri) {
+        val (name, size) = PdfDocumentInspector.queryPdfFileDetails(contentResolver, uri)
+        val pages = PdfDocumentInspector.getRealPdfPageCount(contentResolver, uri).coerceAtLeast(1)
+        val doc = PdfDocument(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            sizeFormatted = size,
+            dateFormatted = "Hari ini",
+            pages = pages,
+            uri = uri,
+            isPdf = true
+        )
+        _uiState.update { state ->
+            state.copy(
+                splitSourcePdf = doc,
+                splitPageItems = (1..pages).map { PageItem(it, isSelected = true) },
+                splitCustomRange = if (pages > 1) "1-${pages.coerceAtMost(3)}" else "1"
+            )
+        }
+    }
+
     fun setSplitMethod(method: SplitMethod) {
         _uiState.update { it.copy(splitMethod = method) }
     }
@@ -627,8 +673,214 @@ class SakuPDFViewModel : ViewModel() {
         }
     }
 
+    fun startRealSplitPdfConversion(
+        context: Context,
+        contentResolver: ContentResolver,
+        destinationTreeUri: Uri?,
+        onNavigateToProcessing: () -> Unit
+    ) {
+        val state = _uiState.value
+        val sourcePdf = state.splitSourcePdf
+        if (sourcePdf == null || sourcePdf.uri == null) {
+            _uiState.update { it.copy(errorMessage = "Pilih file PDF terlebih dahulu.") }
+            return
+        }
+
+        if (state.splitMethod == SplitMethod.CUSTOM) {
+            val parseResult = com.sakupdf.app.domain.SplitRangeParser.parse(state.splitCustomRange, sourcePdf.pages)
+            if (parseResult is com.sakupdf.app.domain.SplitRangeResult.Error) {
+                _uiState.update { it.copy(errorMessage = parseResult.message) }
+                return
+            }
+        } else if (state.splitMethod == SplitMethod.VISUAL) {
+            val selected = state.splitPageItems.filter { it.isSelected }
+            if (selected.isEmpty()) {
+                _uiState.update { it.copy(errorMessage = "Pilih setidaknya 1 halaman untuk dipisahkan.") }
+                return
+            }
+        }
+
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                errorMessage = null,
+                conversionProgress = ConversionProgress(title = "Memisahkan PDF...")
+            )
+        }
+
+        onNavigateToProcessing()
+
+        activeConversionJob = viewModelScope.launch {
+            val selectedPages = _uiState.value.splitPageItems.filter { it.isSelected }.map { it.pageNumber }
+            val result = SplitPdfConverter.split(
+                context = context,
+                contentResolver = contentResolver,
+                sourceUri = sourcePdf.uri,
+                sourceName = sourcePdf.name,
+                splitMethod = _uiState.value.splitMethod,
+                customRangeString = _uiState.value.splitCustomRange,
+                selectedVisualPages = selectedPages,
+                destinationTreeUri = destinationTreeUri,
+                onProgress = { progress ->
+                    _uiState.update { it.copy(conversionProgress = progress) }
+                }
+            )
+
+            result.fold(
+                onSuccess = { splitResult ->
+                    AppLogger.d(TAG, "PDF Split succeeded.")
+                    val res = splitResult.conversionResult
+                    val newDoc = PdfDocument(
+                        id = UUID.randomUUID().toString(),
+                        name = res.filename,
+                        sizeFormatted = res.sizeFormatted,
+                        dateFormatted = "Hari ini",
+                        pages = res.pages,
+                        uri = res.uri,
+                        isPdf = true
+                    )
+                    try {
+                        DocumentHistoryManager.addDocument(context, newDoc)
+                    } catch (_: Exception) {}
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            conversionResult = res,
+                            lastGeneratedDocument = newDoc,
+                            activeDocument = newDoc,
+                            documents = listOf(newDoc) + state.documents,
+                            shouldNavigateToSuccess = true
+                        )
+                    }
+                },
+                onFailure = { err ->
+                    AppLogger.e(TAG, "PDF Split failed: ${err.message}")
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            shouldNavigateToSuccess = false,
+                            errorMessage = err.localizedMessage ?: "Gagal memisahkan PDF. Silakan coba lagi."
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun setCompressSourcePdf(contentResolver: ContentResolver, uri: Uri) {
+        val (name, size) = PdfDocumentInspector.queryPdfFileDetails(contentResolver, uri)
+        val pages = PdfDocumentInspector.getRealPdfPageCount(contentResolver, uri).coerceAtLeast(1)
+        val doc = PdfDocument(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            sizeFormatted = size,
+            dateFormatted = "Hari ini",
+            pages = pages,
+            uri = uri,
+            isPdf = true
+        )
+        _uiState.update { it.copy(compressSourcePdf = doc) }
+    }
+
     fun setCompressionLevel(level: CompressionLevel) {
         _uiState.update { it.copy(compressionLevel = level) }
+    }
+
+    fun startRealCompressPdfConversion(
+        context: Context,
+        contentResolver: ContentResolver,
+        destinationUri: Uri?,
+        onNavigateToProcessing: () -> Unit
+    ) {
+        val state = _uiState.value
+        val sourcePdf = state.compressSourcePdf
+        if (sourcePdf == null || sourcePdf.uri == null) {
+            _uiState.update { it.copy(errorMessage = "Pilih file PDF terlebih dahulu.") }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                errorMessage = null,
+                conversionProgress = ConversionProgress(title = "Mengompres PDF...")
+            )
+        }
+
+        onNavigateToProcessing()
+
+        activeConversionJob = viewModelScope.launch {
+            val result = CompressPdfConverter.compress(
+                context = context,
+                contentResolver = contentResolver,
+                sourceUri = sourcePdf.uri,
+                sourceName = sourcePdf.name,
+                compressionLevel = _uiState.value.compressionLevel,
+                destinationUri = destinationUri,
+                onProgress = { progress ->
+                    _uiState.update { it.copy(conversionProgress = progress) }
+                }
+            )
+
+            result.fold(
+                onSuccess = { compressResult ->
+                    AppLogger.d(TAG, "PDF Compression succeeded: ${compressResult.statusMessage}")
+                    val res = compressResult.conversionResult
+                    val newDoc = PdfDocument(
+                        id = UUID.randomUUID().toString(),
+                        name = res.filename,
+                        sizeFormatted = res.sizeFormatted,
+                        dateFormatted = "Hari ini",
+                        pages = res.pages,
+                        uri = res.uri,
+                        isPdf = true
+                    )
+                    try {
+                        DocumentHistoryManager.addDocument(context, newDoc)
+                    } catch (_: Exception) {}
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            conversionResult = res,
+                            lastGeneratedDocument = newDoc,
+                            activeDocument = newDoc,
+                            documents = listOf(newDoc) + state.documents,
+                            shouldNavigateToSuccess = true
+                        )
+                    }
+                },
+                onFailure = { err ->
+                    AppLogger.e(TAG, "PDF Compression failed: ${err.message}")
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            shouldNavigateToSuccess = false,
+                            errorMessage = err.localizedMessage ?: "Gagal mengompres PDF. Silakan coba lagi."
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun setPdfToImageSourcePdf(contentResolver: ContentResolver, uri: Uri) {
+        val (name, size) = PdfDocumentInspector.queryPdfFileDetails(contentResolver, uri)
+        val pages = PdfDocumentInspector.getRealPdfPageCount(contentResolver, uri).coerceAtLeast(1)
+        val doc = PdfDocument(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            sizeFormatted = size,
+            dateFormatted = "Hari ini",
+            pages = pages,
+            uri = uri,
+            isPdf = true
+        )
+        _uiState.update { state ->
+            state.copy(
+                pdfToImageSourcePdf = doc,
+                pdfToImagePages = (1..pages).map { PageItem(it, isSelected = true) }
+            )
+        }
     }
 
     fun setPdfToImageFormat(format: String) {
@@ -648,25 +900,193 @@ class SakuPDFViewModel : ViewModel() {
         }
     }
 
-    fun setThemeOption(option: ThemeOption) {
+    fun startRealPdfToImageConversion(
+        context: Context,
+        contentResolver: ContentResolver,
+        destinationTreeUri: Uri?,
+        onNavigateToProcessing: () -> Unit
+    ) {
+        val state = _uiState.value
+        val sourcePdf = state.pdfToImageSourcePdf
+        if (sourcePdf == null || sourcePdf.uri == null) {
+            _uiState.update { it.copy(errorMessage = "Pilih file PDF terlebih dahulu.") }
+            return
+        }
+
+        val selectedPages = state.pdfToImagePages.filter { it.isSelected }.map { it.pageNumber }
+        if (selectedPages.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Pilih setidaknya 1 halaman untuk diubah ke gambar.") }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                errorMessage = null,
+                conversionProgress = ConversionProgress(title = "Mengubah PDF ke Gambar...")
+            )
+        }
+
+        onNavigateToProcessing()
+
+        activeConversionJob = viewModelScope.launch {
+            val result = PdfToImageConverter.convert(
+                context = context,
+                contentResolver = contentResolver,
+                sourceUri = sourcePdf.uri,
+                sourceName = sourcePdf.name,
+                format = _uiState.value.pdfToImageFormat,
+                quality = _uiState.value.pdfToImageQuality,
+                selectedPages = selectedPages,
+                destinationTreeUri = destinationTreeUri,
+                onProgress = { progress ->
+                    _uiState.update { it.copy(conversionProgress = progress) }
+                }
+            )
+
+            result.fold(
+                onSuccess = { imageResult ->
+                    AppLogger.d(TAG, "PDF to Image succeeded.")
+                    val res = imageResult.conversionResult
+                    val newDoc = PdfDocument(
+                        id = UUID.randomUUID().toString(),
+                        name = res.filename,
+                        sizeFormatted = res.sizeFormatted,
+                        dateFormatted = "Hari ini",
+                        pages = res.pages,
+                        uri = res.uri,
+                        isPdf = false
+                    )
+                    try {
+                        DocumentHistoryManager.addDocument(context, newDoc)
+                    } catch (_: Exception) {}
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            conversionResult = res,
+                            lastGeneratedDocument = newDoc,
+                            activeDocument = newDoc,
+                            documents = listOf(newDoc) + state.documents,
+                            shouldNavigateToSuccess = true
+                        )
+                    }
+                },
+                onFailure = { err ->
+                    AppLogger.e(TAG, "PDF to Image failed: ${err.message}")
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            shouldNavigateToSuccess = false,
+                            errorMessage = err.localizedMessage ?: "Gagal mengubah PDF ke gambar. Silakan coba lagi."
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun loadPersistedData(context: Context) {
+        val theme = AppSettingsManager.getThemeOption(context)
+        val defaultQuality = AppSettingsManager.getDefaultQuality(context)
+        val defaultPageSize = AppSettingsManager.getDefaultPageSize(context)
+        val defaultMargin = AppSettingsManager.getDefaultMargin(context)
+        val defaultCompressionStr = AppSettingsManager.getDefaultCompression(context)
+        val compLevel = when (defaultCompressionStr) {
+            "Kualitas tinggi" -> CompressionLevel.HIGH
+            "Ukuran minimum" -> CompressionLevel.MINIMUM
+            else -> CompressionLevel.BALANCED
+        }
+
+        val history = DocumentHistoryManager.loadHistory(context)
+        _uiState.update { state ->
+            state.copy(
+                themeOption = theme,
+                pdfSettings = state.pdfSettings.copy(
+                    pageSize = defaultPageSize,
+                    margin = defaultMargin,
+                    quality = defaultQuality
+                ),
+                compressionLevel = compLevel,
+                documents = if (history.isNotEmpty()) history else state.documents
+            )
+        }
+    }
+
+    fun setThemeOption(option: ThemeOption, context: Context? = null) {
+        if (context != null) {
+            AppSettingsManager.saveThemeOption(context, option)
+        }
         _uiState.update { it.copy(themeOption = option) }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun toggleSortOrder() {
+        _uiState.update { state ->
+            val nextOrder = when (state.sortOrder) {
+                "DATE_DESC" -> "NAME_ASC"
+                "NAME_ASC" -> "DATE_ASC"
+                else -> "DATE_DESC"
+            }
+            state.copy(sortOrder = nextOrder)
+        }
     }
 
     fun requestDelete(doc: PdfDocument) {
         _uiState.update { it.copy(deleteCandidate = doc) }
     }
 
-    fun confirmDelete() {
+    fun confirmDelete(context: Context? = null) {
         _uiState.update { state ->
             val candidate = state.deleteCandidate
             if (candidate != null) {
-                val updatedDocs = state.documents.filter { it.id != candidate.id }
-                state.copy(documents = updatedDocs, deleteCandidate = null)
+                val updatedDocs = if (context != null) {
+                    val (_, list) = DocumentHistoryManager.deleteDocumentSaf(context, context.contentResolver, candidate)
+                    list
+                } else {
+                    state.documents.filter { it.id != candidate.id }
+                }
+                state.copy(
+                    documents = updatedDocs,
+                    activeDocument = if (state.activeDocument?.id == candidate.id) null else state.activeDocument,
+                    deleteCandidate = null
+                )
             } else state
         }
     }
 
     fun dismissDelete() {
         _uiState.update { it.copy(deleteCandidate = null) }
+    }
+
+    fun requestRename(doc: PdfDocument) {
+        _uiState.update { it.copy(renameCandidate = doc) }
+    }
+
+    fun confirmRename(newName: String, context: Context? = null) {
+        _uiState.update { state ->
+            val candidate = state.renameCandidate
+            if (candidate != null && newName.isNotBlank()) {
+                val (updatedDoc, updatedList) = if (context != null) {
+                    DocumentHistoryManager.renameDocumentSaf(context, context.contentResolver, candidate, newName)
+                } else {
+                    val renamed = candidate.copy(name = if (candidate.isPdf) PdfMathUtils.sanitizeFilename(newName) else newName)
+                    Pair(renamed, state.documents.map { if (it.id == candidate.id) renamed else it })
+                }
+                state.copy(
+                    documents = updatedList,
+                    activeDocument = if (state.activeDocument?.id == candidate.id) updatedDoc else state.activeDocument,
+                    renameCandidate = null
+                )
+            } else {
+                state.copy(renameCandidate = null)
+            }
+        }
+    }
+
+    fun dismissRename() {
+        _uiState.update { it.copy(renameCandidate = null) }
     }
 }

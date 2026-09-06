@@ -78,11 +78,6 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startDummyProcessing("Menggabungkan PDF") {
-                        navController.navigate(Routes.RESULT_SUCCESS) {
-                            popUpTo(Routes.HOME)
-                        }
-                    }
                     navController.navigate(Routes.PROCESSING)
                 }
             )
@@ -92,11 +87,6 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startDummyProcessing("Memisahkan PDF") {
-                        navController.navigate(Routes.RESULT_SUCCESS) {
-                            popUpTo(Routes.HOME)
-                        }
-                    }
                     navController.navigate(Routes.PROCESSING)
                 }
             )
@@ -106,11 +96,6 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startDummyProcessing("Mengompres PDF") {
-                        navController.navigate(Routes.RESULT_SUCCESS) {
-                            popUpTo(Routes.HOME)
-                        }
-                    }
                     navController.navigate(Routes.PROCESSING)
                 }
             )
@@ -120,11 +105,6 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startDummyProcessing("Mengubah PDF ke Gambar") {
-                        navController.navigate(Routes.RESULT_SUCCESS) {
-                            popUpTo(Routes.HOME)
-                        }
-                    }
                     navController.navigate(Routes.PROCESSING)
                 }
             )
