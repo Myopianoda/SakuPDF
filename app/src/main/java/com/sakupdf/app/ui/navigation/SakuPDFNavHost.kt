@@ -110,11 +110,6 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startDummyProcessing("Mengubah PDF ke Gambar") {
-                        navController.navigate(Routes.RESULT_SUCCESS) {
-                            popUpTo(Routes.HOME)
-                        }
-                    }
                     navController.navigate(Routes.PROCESSING)
                 }
             )

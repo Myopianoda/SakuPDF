@@ -83,6 +83,16 @@ fun HomeScreen(
         }
     }
 
+    // Document Picker launcher for PDF to Image
+    val pdfToImagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.setPdfToImageSourcePdf(context.contentResolver, uri)
+            onNavigateToRoute(Routes.PDF_TO_IMAGE)
+        }
+    }
+
     val tools = listOf(
         ToolGridItem("Gambar ke PDF", "Gabungkan beberapa gambar menjadi satu PDF", Icons.Default.Collections, Routes.ORGANIZE_IMAGES),
         ToolGridItem("Gabungkan PDF", "Satukan beberapa file PDF", Icons.AutoMirrored.Filled.CallMerge, Routes.MERGE_PDF),
@@ -195,6 +205,9 @@ fun HomeScreen(
                                 }
                                 Routes.SPLIT_PDF -> {
                                     splitPdfPickerLauncher.launch(arrayOf("application/pdf"))
+                                }
+                                Routes.PDF_TO_IMAGE -> {
+                                    pdfToImagePickerLauncher.launch(arrayOf("application/pdf"))
                                 }
                                 else -> {
                                     onNavigateToRoute(tool.route)
