@@ -390,6 +390,7 @@ class SakuPDFViewModel : ViewModel() {
                 images = images,
                 settings = settings,
                 targetUri = targetUri,
+                context = context,
                 onProgress = { progress ->
                     _uiState.update { it.copy(conversionProgress = progress) }
                 }
