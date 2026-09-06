@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.sakupdf.app.domain.AppLogger
 import com.sakupdf.app.domain.ImageToPdfConverter
 import com.sakupdf.app.domain.MergePdfConverter
+import com.sakupdf.app.domain.SplitPdfConverter
 import com.sakupdf.app.domain.PdfDocumentInspector
 import com.sakupdf.app.domain.PdfMathUtils
 import com.sakupdf.app.model.CompressionLevel
@@ -43,9 +44,10 @@ data class SakuPDFUiState(
     val pdfsToMerge: List<PdfDocument> = emptyList(),
     val mergePdfFilename: String = "",
     val isClearAllMergePdfsDialogVisible: Boolean = false,
+    val splitSourcePdf: PdfDocument? = null,
     val splitMethod: SplitMethod = SplitMethod.ALL,
-    val splitCustomRange: String = "1-5, 8, 11-14",
-    val splitPageItems: List<PageItem> = (1..6).map { PageItem(it, it % 2 != 0) },
+    val splitCustomRange: String = "1-3",
+    val splitPageItems: List<PageItem> = emptyList(),
     val compressionLevel: CompressionLevel = CompressionLevel.BALANCED,
     val pdfToImageFormat: String = "JPG",
     val pdfToImageQuality: String = "Tinggi",
@@ -578,6 +580,10 @@ class SakuPDFViewModel : ViewModel() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
+    fun setErrorMessage(message: String) {
+        _uiState.update { it.copy(errorMessage = message) }
+    }
+
     fun clearImageToPdfState() {
         _uiState.update { state ->
             state.copy(
@@ -610,6 +616,27 @@ class SakuPDFViewModel : ViewModel() {
         _uiState.update { it.copy(activeDocument = doc) }
     }
 
+    fun setSplitSourcePdf(contentResolver: ContentResolver, uri: Uri) {
+        val (name, size) = PdfDocumentInspector.queryPdfFileDetails(contentResolver, uri)
+        val pages = PdfDocumentInspector.getRealPdfPageCount(contentResolver, uri).coerceAtLeast(1)
+        val doc = PdfDocument(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            sizeFormatted = size,
+            dateFormatted = "Hari ini",
+            pages = pages,
+            uri = uri,
+            isPdf = true
+        )
+        _uiState.update { state ->
+            state.copy(
+                splitSourcePdf = doc,
+                splitPageItems = (1..pages).map { PageItem(it, isSelected = true) },
+                splitCustomRange = if (pages > 1) "1-${pages.coerceAtMost(3)}" else "1"
+            )
+        }
+    }
+
     fun setSplitMethod(method: SplitMethod) {
         _uiState.update { it.copy(splitMethod = method) }
     }
@@ -624,6 +651,97 @@ class SakuPDFViewModel : ViewModel() {
                 if (it.pageNumber == pageNumber) it.copy(isSelected = !it.isSelected) else it
             }
             state.copy(splitPageItems = updated)
+        }
+    }
+
+    fun startRealSplitPdfConversion(
+        context: Context,
+        contentResolver: ContentResolver,
+        destinationTreeUri: Uri?,
+        onNavigateToProcessing: () -> Unit
+    ) {
+        val state = _uiState.value
+        val sourcePdf = state.splitSourcePdf
+        if (sourcePdf == null || sourcePdf.uri == null) {
+            _uiState.update { it.copy(errorMessage = "Pilih file PDF terlebih dahulu.") }
+            return
+        }
+
+        if (state.splitMethod == SplitMethod.CUSTOM) {
+            val parseResult = com.sakupdf.app.domain.SplitRangeParser.parse(state.splitCustomRange, sourcePdf.pages)
+            if (parseResult is com.sakupdf.app.domain.SplitRangeResult.Error) {
+                _uiState.update { it.copy(errorMessage = parseResult.message) }
+                return
+            }
+        } else if (state.splitMethod == SplitMethod.VISUAL) {
+            val selected = state.splitPageItems.filter { it.isSelected }
+            if (selected.isEmpty()) {
+                _uiState.update { it.copy(errorMessage = "Pilih setidaknya 1 halaman untuk dipisahkan.") }
+                return
+            }
+        }
+
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                errorMessage = null,
+                conversionProgress = ConversionProgress(title = "Memisahkan PDF...")
+            )
+        }
+
+        onNavigateToProcessing()
+
+        activeConversionJob = viewModelScope.launch {
+            val selectedPages = _uiState.value.splitPageItems.filter { it.isSelected }.map { it.pageNumber }
+            val result = SplitPdfConverter.split(
+                context = context,
+                contentResolver = contentResolver,
+                sourceUri = sourcePdf.uri,
+                sourceName = sourcePdf.name,
+                splitMethod = _uiState.value.splitMethod,
+                customRangeString = _uiState.value.splitCustomRange,
+                selectedVisualPages = selectedPages,
+                destinationTreeUri = destinationTreeUri,
+                onProgress = { progress ->
+                    _uiState.update { it.copy(conversionProgress = progress) }
+                }
+            )
+
+            result.fold(
+                onSuccess = { splitResult ->
+                    AppLogger.d(TAG, "PDF Split succeeded.")
+                    val res = splitResult.conversionResult
+                    val newDoc = PdfDocument(
+                        id = UUID.randomUUID().toString(),
+                        name = res.filename,
+                        sizeFormatted = res.sizeFormatted,
+                        dateFormatted = "Hari ini",
+                        pages = res.pages,
+                        uri = res.uri,
+                        isPdf = true
+                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            conversionResult = res,
+                            lastGeneratedDocument = newDoc,
+                            activeDocument = newDoc,
+                            documents = listOf(newDoc) + state.documents,
+                            shouldNavigateToSuccess = true
+                        )
+                    }
+                },
+                onFailure = { err ->
+                    AppLogger.e(TAG, "PDF Split failed: ${err.message}")
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            shouldNavigateToSuccess = false,
+                            errorMessage = err.localizedMessage ?: "Gagal memisahkan PDF. Silakan coba lagi."
+                        )
+                    }
+                }
+            )
         }
     }
 

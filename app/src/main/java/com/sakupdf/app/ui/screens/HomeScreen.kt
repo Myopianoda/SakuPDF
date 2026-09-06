@@ -73,6 +73,16 @@ fun HomeScreen(
         }
     }
 
+    // Document Picker launcher for Split PDF
+    val splitPdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.setSplitSourcePdf(context.contentResolver, uri)
+            onNavigateToRoute(Routes.SPLIT_PDF)
+        }
+    }
+
     val tools = listOf(
         ToolGridItem("Gambar ke PDF", "Gabungkan beberapa gambar menjadi satu PDF", Icons.Default.Collections, Routes.ORGANIZE_IMAGES),
         ToolGridItem("Gabungkan PDF", "Satukan beberapa file PDF", Icons.AutoMirrored.Filled.CallMerge, Routes.MERGE_PDF),
@@ -182,6 +192,9 @@ fun HomeScreen(
                                 }
                                 Routes.MERGE_PDF -> {
                                     pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                                }
+                                Routes.SPLIT_PDF -> {
+                                    splitPdfPickerLauncher.launch(arrayOf("application/pdf"))
                                 }
                                 else -> {
                                     onNavigateToRoute(tool.route)

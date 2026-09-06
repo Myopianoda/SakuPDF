@@ -24,6 +24,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import com.sakupdf.app.domain.SplitRangeParser
+import com.sakupdf.app.domain.SplitRangeResult
 import com.sakupdf.app.model.SplitMethod
 import com.sakupdf.app.ui.components.PageGrid
 import com.sakupdf.app.ui.components.SakuPDFTopAppBar
@@ -38,6 +43,28 @@ fun SplitPdfScreen(
     onStartProcess: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.setSplitSourcePdf(context.contentResolver, uri)
+        }
+    }
+
+    val destinationFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri != null) {
+            viewModel.startRealSplitPdfConversion(
+                context = context,
+                contentResolver = context.contentResolver,
+                destinationTreeUri = treeUri,
+                onNavigateToProcessing = onStartProcess
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -55,13 +82,32 @@ fun SplitPdfScreen(
             ) {
                 Box(modifier = Modifier.padding(16.dp)) {
                     Button(
-                        onClick = onStartProcess,
+                        onClick = {
+                            val source = uiState.splitSourcePdf
+                            if (source == null || source.uri == null) {
+                                pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                            } else {
+                                if (uiState.splitMethod == SplitMethod.CUSTOM) {
+                                    val parse = SplitRangeParser.parse(uiState.splitCustomRange, source.pages)
+                                    if (parse is SplitRangeResult.Error) {
+                                        viewModel.setErrorMessage(parse.message)
+                                        return@Button
+                                    }
+                                } else if (uiState.splitMethod == SplitMethod.VISUAL) {
+                                    if (uiState.splitPageItems.none { it.isSelected }) {
+                                        viewModel.setErrorMessage("Pilih setidaknya 1 halaman untuk dipisahkan.")
+                                        return@Button
+                                    }
+                                }
+                                destinationFolderLauncher.launch(null)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = CircleShape
                     ) {
                         Icon(Icons.AutoMirrored.Filled.CallSplit, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Pisahkan PDF")
+                        Text(if (uiState.splitSourcePdf == null) "Pilih Dokumen PDF" else "Pilih Folder & Pisahkan")
                     }
                 }
             }
@@ -78,8 +124,14 @@ fun SplitPdfScreen(
             Spacer(modifier = Modifier.height(4.dp))
 
             // Document Card
+            val sourceDoc = uiState.splitSourcePdf
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable {
+                        pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                    },
                 color = SurfaceContainerLowest,
                 shape = RoundedCornerShape(16.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -100,7 +152,7 @@ fun SplitPdfScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Laporan_Tahunan_2023_Final.pdf",
+                            text = sourceDoc?.name ?: "Pilih Dokumen PDF",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
@@ -108,7 +160,7 @@ fun SplitPdfScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "24 Halaman • 2.4 MB",
+                            text = if (sourceDoc != null) "${sourceDoc.pages} Halaman • ${sourceDoc.sizeFormatted}" else "Ketuk untuk memilih file PDF",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
