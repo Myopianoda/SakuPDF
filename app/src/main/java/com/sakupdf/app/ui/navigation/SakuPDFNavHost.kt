@@ -78,11 +78,6 @@ fun SakuPDFNavHost(
                 viewModel = viewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onStartProcess = {
-                    viewModel.startDummyProcessing("Menggabungkan PDF") {
-                        navController.navigate(Routes.RESULT_SUCCESS) {
-                            popUpTo(Routes.HOME)
-                        }
-                    }
                     navController.navigate(Routes.PROCESSING)
                 }
             )

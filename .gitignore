@@ -35,3 +35,7 @@ Thumbs.db
 
 # Design analysis working files
 Design/_analysis/
+
+# Temporary test/screencap dumps
+*.png
+window_dump.xml
