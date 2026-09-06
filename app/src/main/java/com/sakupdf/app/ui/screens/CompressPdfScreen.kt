@@ -19,6 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import com.sakupdf.app.domain.PdfMathUtils
 import com.sakupdf.app.model.CompressionLevel
 import com.sakupdf.app.ui.components.SakuPDFTopAppBar
 import com.sakupdf.app.ui.theme.PrimaryContainer
@@ -32,6 +36,28 @@ fun CompressPdfScreen(
     onStartProcess: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.setCompressSourcePdf(context.contentResolver, uri)
+        }
+    }
+
+    val savePdfLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.startRealCompressPdfConversion(
+                context = context,
+                contentResolver = context.contentResolver,
+                destinationUri = uri,
+                onNavigateToProcessing = onStartProcess
+            )
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -49,13 +75,22 @@ fun CompressPdfScreen(
             ) {
                 Box(modifier = Modifier.padding(16.dp)) {
                     Button(
-                        onClick = onStartProcess,
+                        onClick = {
+                            val source = uiState.compressSourcePdf
+                            if (source == null || source.uri == null) {
+                                pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                            } else {
+                                val baseName = source.name.substringBeforeLast(".pdf", source.name)
+                                val defaultName = PdfMathUtils.sanitizeFilename("${baseName}_Kompres.pdf")
+                                savePdfLauncher.launch(defaultName)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = CircleShape
                     ) {
                         Icon(Icons.Default.Compress, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Kompres PDF Sekarang")
+                        Text(if (uiState.compressSourcePdf == null) "Pilih Dokumen PDF" else "Kompres PDF Sekarang")
                     }
                 }
             }
@@ -76,8 +111,14 @@ fun CompressPdfScreen(
             )
 
             // Document Card
+            val sourceDoc = uiState.compressSourcePdf
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable {
+                        pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                    },
                 color = SurfaceContainerLowest,
                 shape = RoundedCornerShape(16.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
@@ -97,9 +138,17 @@ fun CompressPdfScreen(
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
-                        Text("Laporan_Tahunan_Keuangan_Final_v2.pdf", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = sourceDoc?.name ?: "Pilih Dokumen PDF",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text("2.4 MB • 12 Halaman", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = if (sourceDoc != null) "${sourceDoc.sizeFormatted} • ${sourceDoc.pages} Halaman" else "Ketuk untuk memilih file PDF",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

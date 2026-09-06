@@ -8,6 +8,7 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sakupdf.app.domain.AppLogger
+import com.sakupdf.app.domain.CompressPdfConverter
 import com.sakupdf.app.domain.ImageToPdfConverter
 import com.sakupdf.app.domain.MergePdfConverter
 import com.sakupdf.app.domain.PdfToImageConverter
@@ -49,6 +50,7 @@ data class SakuPDFUiState(
     val splitMethod: SplitMethod = SplitMethod.ALL,
     val splitCustomRange: String = "1-3",
     val splitPageItems: List<PageItem> = emptyList(),
+    val compressSourcePdf: PdfDocument? = null,
     val compressionLevel: CompressionLevel = CompressionLevel.BALANCED,
     val pdfToImageSourcePdf: PdfDocument? = null,
     val pdfToImageFormat: String = "JPG",
@@ -747,8 +749,97 @@ class SakuPDFViewModel : ViewModel() {
         }
     }
 
+    fun setCompressSourcePdf(contentResolver: ContentResolver, uri: Uri) {
+        val (name, size) = PdfDocumentInspector.queryPdfFileDetails(contentResolver, uri)
+        val pages = PdfDocumentInspector.getRealPdfPageCount(contentResolver, uri).coerceAtLeast(1)
+        val doc = PdfDocument(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            sizeFormatted = size,
+            dateFormatted = "Hari ini",
+            pages = pages,
+            uri = uri,
+            isPdf = true
+        )
+        _uiState.update { it.copy(compressSourcePdf = doc) }
+    }
+
     fun setCompressionLevel(level: CompressionLevel) {
         _uiState.update { it.copy(compressionLevel = level) }
+    }
+
+    fun startRealCompressPdfConversion(
+        context: Context,
+        contentResolver: ContentResolver,
+        destinationUri: Uri?,
+        onNavigateToProcessing: () -> Unit
+    ) {
+        val state = _uiState.value
+        val sourcePdf = state.compressSourcePdf
+        if (sourcePdf == null || sourcePdf.uri == null) {
+            _uiState.update { it.copy(errorMessage = "Pilih file PDF terlebih dahulu.") }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                errorMessage = null,
+                conversionProgress = ConversionProgress(title = "Mengompres PDF...")
+            )
+        }
+
+        onNavigateToProcessing()
+
+        activeConversionJob = viewModelScope.launch {
+            val result = CompressPdfConverter.compress(
+                context = context,
+                contentResolver = contentResolver,
+                sourceUri = sourcePdf.uri,
+                sourceName = sourcePdf.name,
+                compressionLevel = _uiState.value.compressionLevel,
+                destinationUri = destinationUri,
+                onProgress = { progress ->
+                    _uiState.update { it.copy(conversionProgress = progress) }
+                }
+            )
+
+            result.fold(
+                onSuccess = { compressResult ->
+                    AppLogger.d(TAG, "PDF Compression succeeded: ${compressResult.statusMessage}")
+                    val res = compressResult.conversionResult
+                    val newDoc = PdfDocument(
+                        id = UUID.randomUUID().toString(),
+                        name = res.filename,
+                        sizeFormatted = res.sizeFormatted,
+                        dateFormatted = "Hari ini",
+                        pages = res.pages,
+                        uri = res.uri,
+                        isPdf = true
+                    )
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            conversionResult = res,
+                            lastGeneratedDocument = newDoc,
+                            activeDocument = newDoc,
+                            documents = listOf(newDoc) + state.documents,
+                            shouldNavigateToSuccess = true
+                        )
+                    }
+                },
+                onFailure = { err ->
+                    AppLogger.e(TAG, "PDF Compression failed: ${err.message}")
+                    _uiState.update { state ->
+                        state.copy(
+                            isProcessing = false,
+                            shouldNavigateToSuccess = false,
+                            errorMessage = err.localizedMessage ?: "Gagal mengompres PDF. Silakan coba lagi."
+                        )
+                    }
+                }
+            )
+        }
     }
 
     fun setPdfToImageSourcePdf(contentResolver: ContentResolver, uri: Uri) {
